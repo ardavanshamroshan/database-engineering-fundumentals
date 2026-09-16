@@ -127,7 +127,7 @@ In Relational Database Systems, ACID is used to ensure the integrity and consist
     - UPDATE: update the first account with the new balance
     - UPDATE: update the second account with the new balance. deposit the money in the second account.
       - `START TRANSACTION; SELECT * FROM account WHERE account_id = 1; IF balance < 100 THEN ROLLBACK; UPDATE account SET balance = balance - 100 WHERE account_id = 1; UPDATE account SET balance = balance + 100 WHERE account_id = 2; COMMIT;`
-        If the guy doesn't have enough money, the transaction will be rolled back and the database will be in the same state as before the transaction. If the guy has enough money, the transaction will be committed and the database will be in the new state.
+      If the guy doesn't have enough money, the transaction will be rolled back and the database will be in the same state as before the transaction. If the guy has enough money, the transaction will be committed and the database will be in the new state.
   - To ensure you can undo a transaction if needed, all changes are first written to memory; only after confirming the transaction should they be committed to disk.
 
 
@@ -140,7 +140,11 @@ A transaction is an atomic unit of work that either succeeds or fails as a whole
 
 A transaction must bring the database from one valid state to another.
 
-- Consistency in Data
+- Consistency in Data:
+  - Defined by the user
+  - Referntial integrity (foreign keys)
+  - Atomicity of the transaction
+  - Isolation of the transaction
 - Consistency in reads: 
   - If a transation committed a change will a new transaction immediately see the change?
   - Affects the system as whole.
@@ -161,45 +165,77 @@ Begin Transaction 2:
 If the transactions are not isolated, the result of the second transaction will be wrong.
 
 **Isolation levels for inflight transactions:**
+
 - **Read Uncommitted**: No isolation, any change from outside is visible to the transaction, committed or not.
-    - 🔴 Dirty reads: may occur 
-    - 🔴 Lost updates: may occur 
-    - 🔴 Non-repeatable reads: may occur 
-    - 🔴 Phantom reads: may occur 
-
+  - 🔴 Dirty reads: may occur 
+  - 🔴 Lost updates: may occur 
+  - 🔴 Non-repeatable reads: may occur 
+  - 🔴 Phantom reads: may occur
 - **Read Committed**: Each query in a transaction only sees changes committed by other transactions.
-    - 🟢 Dirty reads: dont occur 
-    - 🔴 Lost updates: may occur 
-    - 🔴 Non-repeatable reads: may occur 
-    - 🔴 Phantom reads: may occur 
-
+  - 🟢 Dirty reads: dont occur 
+  - 🔴 Lost updates: may occur 
+  - 🔴 Non-repeatable reads: may occur 
+  - 🔴 Phantom reads: may occur
 - **Repeatable Read**: The transaction will make sure that when a query reads a row, that row will remain unchanged the transaction while its running.
-    - 🟢 Dirty reads: dont occur 
-    - 🟢 Lost updates: dont occur 
-    - 🔴 Non-repeatable reads: dont occur
-    - 🔴  Phantom reads: may occur
-    
-
+  - 🟢 Dirty reads: dont occur 
+  - 🟢 Lost updates: dont occur 
+  - 🔴 Non-repeatable reads: dont occur
+  - 🔴  Phantom reads: may occur
 - **Snapshot**: Each query in a transaction only sees changes that have been committed up to the start of the transaction. it's like a snapshot version of the database at the start of the transaction.
-    - 🟢 Dirty reads: dont occur
-    - 🟢 Lost updates: dont occur
-    - 🟢 Non-repeatable reads: dont occur
-    - 🟢 Phantom reads: dont occur
+  - 🟢 Dirty reads: dont occur
+  - 🟢 Lost updates: dont occur
+  - 🟢 Non-repeatable reads: dont occur
+  - 🟢 Phantom reads: dont occur
 
 Database implementation of isolation:
+
 - Each DBMS implements isolcation levels differently.
 - Pessimistic - Row level locks, table locks, page locs to avoid lost updates.
 - Optimistic No locks - just track if things changed and fail the transaction if so.
 - Repeatable read "locks" the rows it read but it could be expensive if you read a lot of rows, postgres implements RR as snapshot. that is why you don't get phantom read with postgres in repeatable rea.
 
 
+
 ### Durability
 
 A transaction is durable, so that it will not be lost even if the system fails.
+If the power is lost or even the system is crashed, the transaction should be durable, the client the changes should be persisted to the database.
+
+**Durability in practice:**
+Durability is accomplished through strategies that ensure completed transactions are not lost, even during failures such as power outages or system crashes. Here are some common approaches and what they mean:
+
+- **Write-Ahead Logging (WAL):** Before any changes are made to the main database files, all modifications are first recorded in a separate log file. This ensures that, in the event of a crash, the system can recover committed transactions by replaying the log. WAL is widely used because it provides strong durability guarantees.
+- **Write-Through Logging (WTL):** With this method, changes are simultaneously written both to the log file and to the database itself. This approach reduces the risk of data loss and helps ensure that data in the main storage and the log remains consistent.
+- **Write-Behind Logging (WBL)/Write-Back Logging:** Here, changes are first written to the log and the system may delay the update to the main database files until later (often batching several changes together). This can improve performance, but it requires careful recovery logic to ensure nothing is lost if the system crashes before the data file is updated.
+- **Variations by DBMS:** Different database management systems (DBMS) combine and optimize these durability strategies differently depending on their architecture and the trade-offs they make between speed, data safety, and complexity.
+
+In summary, durability mechanisms like logging guarantee that once a transaction is committed, it will survive failures by allowing the recovery process to reconstruct or restore affected data.
+
+### Eventual Consistency in Database Systems
+
+**Consistency** is one of the core ACID properties in relational databases, ensuring that any transaction brings the database from one valid state to another.  
+However, in distributed systems and many NoSQL databases, a different approach called **eventual consistency** is often used.
+
+**Eventual consistency** means that, given enough time without new updates, all replicas of data will become consistent, but immediate consistency is not guaranteed after each transaction.  
+While most commonly associated with NoSQL systems, eventual consistency can also apply to distributed relational databases, especially when prioritizing availability and partition tolerance.
+
+*Key points:*  
+
+- ACID **consistency** generally refers to enforcing all integrity rules and constraints after each transaction in relational databases.  
+- **Eventual consistency** allows temporary discrepancies between nodes, with the system guaranteeing convergence over time.
+- Not exclusive to NoSQL; can also apply in certain distributed relational setups.
+
+**Example of Eventual Consistency:**
+
+Imagine a distributed database system with one master (primary) node, `A`, and two replica (follower/slave) nodes, `A1` and `A2`.  
+
+- **Step 1:** An update is made to the master node `A` (for example, changing the value of `X`).
+- **Step 2:** Shortly after, a read request is sent to follower node `A1`. At this point, `A1` has **not** yet received the latest update from `A`, so it returns the *old* value of `X`. The system is temporarily inconsistent because not all nodes reflect the latest changes.
+- **Step 3:** After some time, the update propagates from `A` to `A1` and `A2`. Once this replication finishes, all nodes (A, A1, A2) have the same, up-to-date value for `X`.
+
+This illustrates that, although immediate consistency is not guaranteed, the system will eventually reach a consistent state once all replicas are synchronized with the master.
 
 ---
-
-
 
 ### 03 — Understanding Database Internals
 
