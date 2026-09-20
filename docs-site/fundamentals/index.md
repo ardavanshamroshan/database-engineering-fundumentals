@@ -223,7 +223,9 @@ A transaction must bring the database from one valid state to another.
 
 #### Isolation
 
-A transaction is isolated from other transactions so each sees a consistent snapshot of the database.
+**Isolation Level** controls how concurrent transactions lock and see each other’s data.
+
+Simple case: one transaction runs an `UPDATE`, another runs a `SELECT` on the same rows. The isolation level decides whether the reader waits, sees old data, sees uncommitted data, or sees a snapshot.
 
 Question: can my in-flight transaction see changes made by other transactions?
 
@@ -242,37 +244,179 @@ UPDATE products SET quantity = quantity - 1 WHERE id = 1;
 
 If transactions are not isolated, results can be wrong.
 
-**Isolation levels for in-flight transactions:**
+##### Core anomalies
 
-- **Read Uncommitted** — no isolation; outside changes are visible, committed or not
-  - 🔴 Dirty reads: may occur
-  - 🔴 Lost updates: may occur
-  - 🔴 Non-repeatable reads: may occur
-  - 🔴 Phantom reads: may occur
-- **Read Committed** — each query only sees changes committed by other transactions
-  - 🟢 Dirty reads: do not occur
-  - 🔴 Lost updates: may occur
-  - 🔴 Non-repeatable reads: may occur
-  - 🔴 Phantom reads: may occur
-- **Repeatable Read** — once a query reads a row, that row stays unchanged for the rest of the transaction
-  - 🟢 Dirty reads: do not occur
-  - 🟢 Lost updates: do not occur
-  - 🟢 Non-repeatable reads: do not occur
-  - 🔴 Phantom reads: may occur
-- **Snapshot** — each query only sees changes committed up to the start of the transaction (a snapshot)
-  - 🟢 Dirty reads: do not occur
-  - 🟢 Lost updates: do not occur
-  - 🟢 Non-repeatable reads: do not occur
-  - 🟢 Phantom reads: do not occur
+**Dirty read** — Transaction A changes data but has not committed yet. Transaction B’s `SELECT` reads those pending changes. If A later rolls back, B already used invalid data.
 
-##### Phantom read
-
-A **phantom read** happens when a transaction runs the **same query twice** and the second run sees **new rows** (or missing rows) that match the `WHERE` predicate — because another transaction **inserted** or **deleted** matching rows and committed in between.
+**Phantom read** — While Transaction A runs `SELECT`s, another transaction inserts (or deletes) rows that match A’s predicate. A’s later `SELECT` sees a different set of rows — new “ghost” rows appear (or disappear).
 
 | Anomaly | What changed |
 | ------- | ------------ |
+| Dirty read | You read **uncommitted** changes from another transaction |
 | Non-repeatable read | An **existing row** you already read was **updated** (or deleted) |
-| Phantom read | The **set of rows** matching your query grew/shrank — a new “ghost” row appears (or disappears) |
+| Phantom read | The **set of rows** matching your query grew/shrank |
+
+##### Isolation levels (overview)
+
+| Level | Typical behavior | Dirty | Non-repeatable | Phantom |
+| ----- | ---------------- | ----- | -------------- | ------- |
+| **Read Uncommitted** | Almost no read locks; can see uncommitted data | 🔴 | 🔴 | 🔴 |
+| **Read Committed** | Default in SQL Server / PostgreSQL; only committed data | 🟢 | 🔴 | 🔴 |
+| **Repeatable Read** | Rows you read stay stable for the transaction; writers wait | 🟢 | 🟢 | 🔴 (SQL Server) / often 🟢 (PostgreSQL snapshot) |
+| **Serializable** | Like Repeatable Read + blocks inserts that would create phantoms | 🟢 | 🟢 | 🟢 |
+| **Snapshot** | Consistent snapshot without blocking writers the same way; versions in tempdb (SQL Server) | 🟢 | 🟢 | 🟢 |
+
+##### Setup for SQL Server labs
+
+Examples below follow the classic two-query-window pattern (SQL Server). Create this once:
+
+```sql
+CREATE DATABASE IsolationLevelTest;
+GO
+USE IsolationLevelTest;
+GO
+
+CREATE TABLE TestTable
+(
+  ID INT IDENTITY,
+  Field1 INT NULL,
+  Field2 INT NULL,
+  Field3 INT NULL
+);
+GO
+
+INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
+INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
+INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
+INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
+```
+
+##### 1) Read Uncommitted
+
+Lowest level: little/no locking for readers. Another session can read (or even change) data that is still inside an open transaction. `SELECT` may return values that are not final yet → **dirty read**.
+
+**Session 1:**
+
+```sql
+BEGIN TRAN;
+UPDATE TestTable SET Field1 = 2;
+WAITFOR DELAY '00:00:10';
+ROLLBACK;
+```
+
+**Session 2 (run quickly while Session 1 is waiting):**
+
+```sql
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT * FROM TestTable;
+```
+
+First run of Session 2 often shows `Field1 = 2` even though Session 1 later rolls back. Wait 10 seconds and select again — values return to the previous state. That first select was a dirty read.
+
+##### 2) Read Committed
+
+Default in SQL Server. Data changed inside an open transaction is locked until that transaction ends. A concurrent `SELECT` / write on those rows **waits** for commit or rollback. You do not read uncommitted data — but you can still get non-repeatable and phantom reads across statements.
+
+**Session 1:**
+
+```sql
+BEGIN TRAN;
+UPDATE TestTable SET Field1 = 2;
+WAITFOR DELAY '00:00:10';
+ROLLBACK;
+```
+
+**Session 2:**
+
+```sql
+SELECT * FROM TestTable;  -- blocks until Session 1 finishes
+```
+
+Session 2’s result appears only after Session 1 ends (here: after rollback). No dirty read.
+
+##### 3) Repeatable Read
+
+Like Read Committed, plus: once you `SELECT` rows, other transactions’ **updates** to those rows wait until your transaction finishes. Running the same `SELECT` twice usually returns the **same row values**.
+
+**Session 1:**
+
+```sql
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+BEGIN TRAN;
+SELECT * FROM TestTable;
+WAITFOR DELAY '00:00:10';
+SELECT * FROM TestTable;
+ROLLBACK;
+```
+
+**Session 2 (while Session 1 waits):**
+
+```sql
+UPDATE TestTable SET Field1 = 7;  -- waits for Session 1
+```
+
+Both selects in Session 1 match. Under **Read Committed**, Session 2’s update can commit between the two selects and the second select can show different values (non-repeatable read).
+
+**Important (SQL Server):** under Repeatable Read, an **INSERT** into the same table can still succeed. The second `SELECT` may show extra rows → **phantom read** is still possible. Use **Serializable** (or Snapshot) to block that.
+
+##### 4) Serializable
+
+Like Repeatable Read, with an extra guarantee: other sessions cannot **insert** rows that would change your result set until your transaction ends. Phantoms are prevented (readers/writers may block longer).
+
+**Session 1:**
+
+```sql
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+BEGIN TRAN;
+SELECT * FROM TestTable;
+WAITFOR DELAY '00:00:10';
+SELECT * FROM TestTable;
+ROLLBACK;
+```
+
+**Session 2:**
+
+```sql
+INSERT INTO TestTable (Field1, Field2, Field3)
+VALUES (100, 100, 100);  -- waits until Session 1 ends
+```
+
+Both selects in Session 1 stay identical; the insert waits.
+
+##### 5) Snapshot
+
+Same *visibility* goal as Serializable (stable result set), but writers are not locked the same way. Concurrent updates/inserts go into **row versions** (SQL Server stores them in `tempdb`). Your snapshot transaction keeps reading the version as of transaction start.
+
+Enable once per database:
+
+```sql
+ALTER DATABASE IsolationLevelTest
+SET ALLOW_SNAPSHOT_ISOLATION ON;
+```
+
+**Session 1:**
+
+```sql
+SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+BEGIN TRAN;
+SELECT * FROM TestTable;
+WAITFOR DELAY '00:00:10';
+SELECT * FROM TestTable;
+ROLLBACK;
+```
+
+**Session 2:**
+
+```sql
+INSERT INTO TestTable (Field1, Field2, Field3)
+VALUES (200, 200, 200);  -- does not wait on Session 1
+```
+
+Session 2 proceeds immediately. Both selects in Session 1 still match — they read the snapshot, not the new insert.
+
+##### Phantom read — PostgreSQL lab
+
+A **phantom read** happens when a transaction runs the **same query twice** and the second run sees **new rows** (or missing rows) that match the `WHERE` predicate — because another transaction **inserted** or **deleted** matching rows and committed in between.
 
 **Lab (PostgreSQL) — two sessions**
 
@@ -331,6 +475,8 @@ SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
 ```
 
 In PostgreSQL, Repeatable Read uses a snapshot — the second `COUNT(*)` usually stays `1` until you commit. Snapshot / Serializable block this phantom; Read Committed allows it.
+
+> **Engine note:** SQL Server Repeatable Read can still allow phantoms (inserts). PostgreSQL Repeatable Read is snapshot-based and typically does **not**. Always check your DBMS docs.
 
 **Database implementation of isolation:**
 
