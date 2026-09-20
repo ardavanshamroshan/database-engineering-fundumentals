@@ -5,7 +5,11 @@
 کتابچه اسکلت برای دنبال کردن کورس *Database Engineering Fundamentals*.
 پیشرفت را علامت بزن. یادداشت فصل‌ها به‌مرور کامل می‌شود.
 
+**سایت مستندات:** [ardavanshamroshan.github.io/database-engineering-fundumentals](https://ardavanshamroshan.github.io/database-engineering-fundumentals/)
+
 **زبان:** فارسی · [English](README.md)
+
+**چیت‌شیت‌ها:** [PostgreSQL](cheatsheets/postgresql.md) · [MySQL](cheatsheets/mysql.md) · [SQLite](cheatsheets/sqlite.md) · [Redis](cheatsheets/redis.md) · [MongoDB](cheatsheets/mongodb.md) · [Cassandra](cheatsheets/cassandra.md) · [ScyllaDB](cheatsheets/scylladb.md)
 
 ---
 

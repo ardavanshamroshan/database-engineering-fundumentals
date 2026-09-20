@@ -1,0 +1,11 @@
+node_modules/
+.vitepress/dist/
+.vitepress/cache/
+sql/postgresql.md
+sql/mysql.md
+sql/sqlite.md
+nosql/redis.md
+nosql/mongodb.md
+nosql/cassandra.md
+nosql/scylladb.md
+public/README.en.md

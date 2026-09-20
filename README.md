@@ -5,7 +5,11 @@
 Skeleton study guide for the *Database Engineering Fundamentals* course.
 Mark progress as you go. Chapter notes grow over time.
 
+**Docs site:** [ardavanshamroshan.github.io/database-engineering-fundumentals](https://ardavanshamroshan.github.io/database-engineering-fundumentals/)
+
 **Language:** English · [فارسی](README.fa.md)
+
+**Cheatsheets:** [PostgreSQL](cheatsheets/postgresql.md) · [MySQL](cheatsheets/mysql.md) · [SQLite](cheatsheets/sqlite.md) · [Redis](cheatsheets/redis.md) · [MongoDB](cheatsheets/mongodb.md) · [Cassandra](cheatsheets/cassandra.md) · [ScyllaDB](cheatsheets/scylladb.md)
 
 ---
 

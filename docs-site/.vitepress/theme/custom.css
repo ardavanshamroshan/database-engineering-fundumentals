@@ -1,0 +1,146 @@
+:root {
+  --vp-c-brand-1: #2a6f6a;
+  --vp-c-brand-2: #1f5652;
+  --vp-c-brand-3: #174240;
+  --vp-c-brand-soft: rgba(42, 111, 106, 0.14);
+
+  --vp-c-bg: #f4f6f4;
+  --vp-c-bg-alt: #e8ece9;
+  --vp-c-bg-elv: #fafbfa;
+  --vp-c-bg-soft: #eef1ee;
+
+  --vp-c-text-1: #141a18;
+  --vp-c-text-2: #3d4744;
+  --vp-c-text-3: #6a7571;
+
+  --vp-font-family-base: 'IBM Plex Sans', 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --vp-font-family-mono: 'IBM Plex Mono', 'SF Mono', 'Consolas', monospace;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #174240 0%, #2a6f6a 55%, #3d8a6e 100%);
+  --vp-home-hero-image-background-image: radial-gradient(
+      ellipse 80% 60% at 70% 20%,
+      rgba(42, 111, 106, 0.22),
+      transparent 60%
+    ),
+    radial-gradient(ellipse 60% 50% at 20% 80%, rgba(61, 71, 68, 0.1), transparent 55%);
+}
+
+.dark {
+  --vp-c-brand-1: #6fb8b1;
+  --vp-c-brand-2: #4d9a93;
+  --vp-c-brand-3: #3d807a;
+  --vp-c-brand-soft: rgba(111, 184, 177, 0.16);
+
+  --vp-c-bg: #0f1412;
+  --vp-c-bg-alt: #151c19;
+  --vp-c-bg-elv: #1a221f;
+  --vp-c-bg-soft: #1a221f;
+
+  --vp-c-text-1: #e8eeeb;
+  --vp-c-text-2: #a8b5b0;
+  --vp-c-text-3: #7a8782;
+
+  --vp-home-hero-name-background: linear-gradient(120deg, #9fd4ce 0%, #6fb8b1 50%, #8bc4a8 100%);
+  --vp-home-hero-image-background-image: radial-gradient(
+      ellipse 80% 60% at 70% 20%,
+      rgba(111, 184, 177, 0.18),
+      transparent 60%
+    ),
+    radial-gradient(ellipse 60% 50% at 15% 85%, rgba(139, 196, 168, 0.08), transparent 55%);
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: local('IBM Plex Sans'), local('IBMPlexSans');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: local('IBM Plex Mono'), local('IBMPlexMono');
+}
+
+html {
+  background-image: linear-gradient(
+      180deg,
+      rgba(42, 111, 106, 0.04) 0%,
+      transparent 28%
+    ),
+    repeating-linear-gradient(
+      -12deg,
+      transparent,
+      transparent 11px,
+      rgba(20, 26, 24, 0.015) 11px,
+      rgba(20, 26, 24, 0.015) 12px
+    );
+  background-attachment: fixed;
+}
+
+.dark html {
+  background-image: linear-gradient(
+      180deg,
+      rgba(111, 184, 177, 0.05) 0%,
+      transparent 30%
+    ),
+    repeating-linear-gradient(
+      -12deg,
+      transparent,
+      transparent 11px,
+      rgba(232, 238, 235, 0.02) 11px,
+      rgba(232, 238, 235, 0.02) 12px
+    );
+}
+
+.VPHomeHero .name {
+  letter-spacing: -0.03em;
+}
+
+.VPHomeHero .text {
+  max-width: 28rem;
+  font-weight: 500;
+}
+
+.VPHomeHero .tagline {
+  max-width: 32rem;
+  color: var(--vp-c-text-2);
+}
+
+.engine-list {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.engine-list a {
+  display: block;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--vp-c-divider);
+  text-decoration: none;
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.engine-list a:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.engine-list span {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  font-size: 0.9rem;
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc h1 {
+  letter-spacing: -0.02em;
+}

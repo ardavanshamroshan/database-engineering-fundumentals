@@ -1,0 +1,14 @@
+{
+  "name": "database-engineering-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node scripts/sync-cheatsheets.mjs",
+    "docs:dev": "npm run sync && vitepress dev",
+    "docs:build": "npm run sync && vitepress build",
+    "docs:preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3"
+  }
+}
