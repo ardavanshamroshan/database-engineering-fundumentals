@@ -8,8 +8,7 @@ const sidebar = [
     text: 'Start',
     items: [
       { text: 'Home', link: '/' },
-      { text: 'Fundamentals (EN)', link: '/fundamentals/' },
-      { text: 'Fundamentals (FA)', link: '/fundamentals/fa' },
+      { text: 'Fundamentals', link: '/fundamentals/' },
     ],
   },
   {
@@ -62,13 +61,7 @@ export default defineConfig({
     logo: '/images/logo-mark.svg',
     siteTitle: 'Database Engineering',
     nav: [
-      {
-        text: 'Fundamentals',
-        items: [
-          { text: 'English', link: '/fundamentals/' },
-          { text: 'فارسی', link: '/fundamentals/fa' },
-        ],
-      },
+      { text: 'Fundamentals', link: '/fundamentals/' },
       {
         text: 'Cheatsheets',
         items: [

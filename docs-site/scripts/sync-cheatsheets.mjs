@@ -85,7 +85,10 @@ function addChapterHeadingIds(md) {
 
 function rewriteReadmeLinks(md) {
   return md
-    .replace(/\]\(README\.fa\.md\)/g, '](/fundamentals/fa)')
+    .replace(
+      /\]\(README\.fa\.md\)/g,
+      '](https://github.com/ardavanshamroshan/database-engineering-fundumentals/blob/main/README.fa.md)',
+    )
     .replace(/\]\(README\.md\)/g, '](/fundamentals/)')
     .replace(
       /\]\(cheatsheets\/postgresql\.md\)/g,
@@ -145,7 +148,7 @@ ${body}`
   console.log(`synced ${item.src} → ${item.dest}`)
 }
 
-// --- Fundamentals from root README files ---
+// --- Fundamentals from root README (English only) ---
 {
   const en = prepareReadme(readFileSync(join(root, 'README.md'), 'utf8'))
   writePage(
@@ -159,21 +162,4 @@ outline: deep
 ${en}`,
   )
   console.log('synced README.md → fundamentals/index.md')
-}
-
-{
-  const fa = prepareReadme(readFileSync(join(root, 'README.fa.md'), 'utf8'))
-  writePage(
-    'fundamentals/fa.md',
-    `---
-title: مبانی مهندسی پایگاه‌داده
-description: مسیر یادگیری مبانی مهندسی پایگاه‌داده
-outline: deep
-lang: fa-IR
-dir: rtl
----
-
-${fa}`,
-  )
-  console.log('synced README.fa.md → fundamentals/fa.md')
 }

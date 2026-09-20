@@ -13,7 +13,7 @@ Mark progress as you go. Chapter notes grow over time.
 
 **Docs site:** [ardavanshamroshan.github.io/database-engineering-fundumentals](https://ardavanshamroshan.github.io/database-engineering-fundumentals/)
 
-**Language:** English · [فارسی](/fundamentals/fa)
+**Language:** English · [فارسی](https://github.com/ardavanshamroshan/database-engineering-fundumentals/blob/main/README.fa.md)
 
 **Cheatsheets:** [PostgreSQL](/sql/postgresql) · [MySQL](/sql/mysql) · [SQLite](/sql/sqlite) · [Redis](/nosql/redis) · [MongoDB](/nosql/mongodb) · [Cassandra](/nosql/cassandra) · [ScyllaDB](/nosql/scylladb)
 
