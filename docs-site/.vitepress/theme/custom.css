@@ -671,3 +671,14 @@
 .Layout {
   --vp-nav-height: 48px;
 }
+
+/* Persian fundamentals page */
+html[dir='rtl'] .vp-doc {
+  font-family: 'IBM Plex Sans', 'Tahoma', 'Segoe UI', sans-serif;
+}
+
+html[dir='rtl'] .vp-doc h1,
+html[dir='rtl'] .vp-doc h2,
+html[dir='rtl'] .vp-doc h3 {
+  letter-spacing: 0;
+}

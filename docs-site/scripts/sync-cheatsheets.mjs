@@ -7,7 +7,7 @@ const root = join(__dirname, '../..')
 const site = join(__dirname, '..')
 const sheets = join(root, 'cheatsheets')
 
-const map = [
+const sheetMap = [
   {
     src: 'postgresql.md',
     dest: 'sql/postgresql.md',
@@ -59,19 +59,72 @@ const map = [
   },
 ]
 
-/** GitHub TOC (#1-foo--bar) → VitePress (#_1-foo-bar) */
-function rewriteTocAnchors(md) {
+/** GitHub TOC (#1-foo--bar / #01--acid) → VitePress (#_1-foo-bar / #_01-acid) */
+function rewriteNumberedAnchors(md) {
   return md.replace(/\]\(#([0-9][^)]*)\)/g, (_, id) => {
     const fixed = id.replace(/--+/g, '-')
     return `](#_${fixed})`
   })
 }
 
-for (const item of map) {
-  const from = join(sheets, item.src)
-  const to = join(site, item.dest)
+/** Stable chapter heading IDs so TOC matches (em dash breaks VitePress slugs). */
+function addChapterHeadingIds(md) {
+  return md.replace(/^### (\d+)\s+[—–-]\s+(.+)$/gm, (_, num, title) => {
+    const slug = title
+      .toLowerCase()
+      .normalize('NFC')
+      .replace(/\+/g, '')
+      .replace(/\u200c/g, '')
+      .replace(/[^\w\u0600-\u06FF\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+    return `### ${num} — ${title} {#_${num}-${slug}}`
+  })
+}
+
+function rewriteReadmeLinks(md) {
+  return md
+    .replace(/\]\(README\.fa\.md\)/g, '](/fundamentals/fa)')
+    .replace(/\]\(README\.md\)/g, '](/fundamentals/)')
+    .replace(
+      /\]\(cheatsheets\/postgresql\.md\)/g,
+      '](/sql/postgresql)',
+    )
+    .replace(/\]\(cheatsheets\/mysql\.md\)/g, '](/sql/mysql)')
+    .replace(/\]\(cheatsheets\/sqlite\.md\)/g, '](/sql/sqlite)')
+    .replace(/\]\(cheatsheets\/redis\.md\)/g, '](/nosql/redis)')
+    .replace(/\]\(cheatsheets\/mongodb\.md\)/g, '](/nosql/mongodb)')
+    .replace(
+      /\]\(cheatsheets\/cassandra\.md\)/g,
+      '](/nosql/cassandra)',
+    )
+    .replace(
+      /\]\(cheatsheets\/scylladb\.md\)/g,
+      '](/nosql/scylladb)',
+    )
+    .replace(
+      /\*\*Local course materials:\*\*\n\n`[^`]+`\n*/g,
+      '',
+    )
+    .replace(/\*\*مسیر محلی مواد کورس:\*\*\n\n`[^`]+`\n*/g, '')
+}
+
+function prepareReadme(md) {
+  return rewriteNumberedAnchors(
+    addChapterHeadingIds(rewriteReadmeLinks(md)),
+  )
+}
+
+function writePage(dest, content) {
+  const to = join(site, dest)
   mkdirSync(dirname(to), { recursive: true })
-  const body = rewriteTocAnchors(
+  writeFileSync(to, content)
+}
+
+for (const item of sheetMap) {
+  const from = join(sheets, item.src)
+  const body = rewriteNumberedAnchors(
     readFileSync(from, 'utf8').replace(/^#\s+.+\n+/, ''),
   )
   const out = `---
@@ -88,6 +141,39 @@ outline: deep
 </div>
 
 ${body}`
-  writeFileSync(to, out)
+  writePage(item.dest, out)
   console.log(`synced ${item.src} → ${item.dest}`)
+}
+
+// --- Fundamentals from root README files ---
+{
+  const en = prepareReadme(readFileSync(join(root, 'README.md'), 'utf8'))
+  writePage(
+    'fundamentals/index.md',
+    `---
+title: Fundamentals
+description: Database Engineering Fundamentals study path
+outline: deep
+---
+
+${en}`,
+  )
+  console.log('synced README.md → fundamentals/index.md')
+}
+
+{
+  const fa = prepareReadme(readFileSync(join(root, 'README.fa.md'), 'utf8'))
+  writePage(
+    'fundamentals/fa.md',
+    `---
+title: مبانی مهندسی پایگاه‌داده
+description: مسیر یادگیری مبانی مهندسی پایگاه‌داده
+outline: deep
+lang: fa-IR
+dir: rtl
+---
+
+${fa}`,
+  )
+  console.log('synced README.fa.md → fundamentals/fa.md')
 }

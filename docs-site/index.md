@@ -9,9 +9,8 @@ title: Home
 ## Fundamentals
 
 <ul class="catalog plain">
-  <li><a href="./fundamentals/"><strong>Study path</strong><em>17 chapters</em></a></li>
-  <li><a href="https://github.com/ardavanshamroshan/database-engineering-fundumentals/blob/main/README.md"><strong>English notes</strong><em>GitHub</em></a></li>
-  <li><a href="https://github.com/ardavanshamroshan/database-engineering-fundumentals/blob/main/README.fa.md"><strong>Persian notes</strong><em>GitHub</em></a></li>
+  <li><a href="./fundamentals/"><strong>English notes</strong><em>full study path</em></a></li>
+  <li><a href="./fundamentals/fa"><strong>یادداشت فارسی</strong><em>مسیر کامل</em></a></li>
 </ul>
 
 ## SQL
