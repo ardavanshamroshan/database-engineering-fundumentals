@@ -263,6 +263,73 @@ If transactions are not isolated, results can be wrong.
   - 🟢 Non-repeatable reads: do not occur
   - 🟢 Phantom reads: do not occur
 
+##### Phantom read
+
+A **phantom read** happens when a transaction runs the **same query twice** and the second run sees **new rows** (or missing rows) that match the `WHERE` predicate — because another transaction **inserted** or **deleted** matching rows and committed in between.
+
+| Anomaly | What changed |
+| ------- | ------------ |
+| Non-repeatable read | An **existing row** you already read was **updated** (or deleted) |
+| Phantom read | The **set of rows** matching your query grew/shrank — a new “ghost” row appears (or disappears) |
+
+**Lab (PostgreSQL) — two sessions**
+
+Use the `products` table from the Atomicity lab (or recreate it). Open **two** `psql` sessions to `app`.
+
+**Setup (once):**
+
+```sql
+\c app
+TRUNCATE products RESTART IDENTITY;
+INSERT INTO products (name, price, inventory)
+VALUES ('Phone', 999.99, 10);
+```
+
+**Session A — start transaction, count matching rows:**
+
+```sql
+BEGIN;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- 1
+```
+
+**Session B — insert a matching row and commit:**
+
+```sql
+INSERT INTO products (name, price, inventory)
+VALUES ('Laptop', 1299.00, 5);
+COMMIT;  -- if you were in a transaction; otherwise the INSERT auto-commits
+```
+
+**Session A — same query again (still inside the open transaction):**
+
+```sql
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- 2  ← phantom: a new row appeared in the result set
+COMMIT;
+```
+
+**What happened**
+
+1. Session A counted rows with `price > 500` → `1` (Phone).
+2. Session B inserted Laptop (`1299`) and committed.
+3. Session A ran the same predicate again → `2`.
+4. The extra row is the **phantom**: it was not in the first result set of this transaction.
+
+**Under stronger isolation**
+
+Repeat the same steps, but in Session A use:
+
+```sql
+BEGIN;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+-- or: SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+```
+
+In PostgreSQL, Repeatable Read uses a snapshot — the second `COUNT(*)` usually stays `1` until you commit. Snapshot / Serializable block this phantom; Read Committed allows it.
+
 **Database implementation of isolation:**
 
 - Each DBMS implements isolation levels differently

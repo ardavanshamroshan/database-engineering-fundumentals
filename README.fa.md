@@ -263,6 +263,73 @@ UPDATE products SET quantity = quantity - 1 WHERE id = 1;
   - 🟢 Non-repeatable reads: رخ نمی‌دهد
   - 🟢 Phantom reads: رخ نمی‌دهد
 
+##### Phantom read (خواندن شبح)
+
+**Phantom read** وقتی رخ می‌دهد که یک تراکنش **همان کوئری را دو بار** اجرا کند و بار دوم **سطرهای جدیدی** (یا سطرهایی که غیب شده‌اند) مطابق `WHERE` ببیند — چون تراکنش دیگری در این فاصله سطرهای مطابق را **INSERT** یا **DELETE** کرده و commit کرده است.
+
+| ناهنجاری | چه چیزی عوض شد؟ |
+| -------- | --------------- |
+| Non-repeatable read | یک **سطر موجود** که قبلاً خوانده بودی **آپدیت** (یا حذف) شد |
+| Phantom read | **مجموعه سطرهای** مطابق کوئری بزرگ/کوچک شد — یک سطر «شبح» ظاهر (یا غیب) شد |
+
+**آزمایش (PostgreSQL) — دو session**
+
+از جدول `products` آزمایش Atomicity استفاده کن (یا دوباره بساز). دو session جدا در `psql` به دیتابیس `app` باز کن.
+
+**آماده‌سازی (یک‌بار):**
+
+```sql
+\c app
+TRUNCATE products RESTART IDENTITY;
+INSERT INTO products (name, price, inventory)
+VALUES ('Phone', 999.99, 10);
+```
+
+**Session A — شروع تراکنش و شمارش سطرهای مطابق:**
+
+```sql
+BEGIN;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- 1
+```
+
+**Session B — درج یک سطر مطابق و commit:**
+
+```sql
+INSERT INTO products (name, price, inventory)
+VALUES ('Laptop', 1299.00, 5);
+COMMIT;  -- اگر داخل تراکنش بودی؛ وگرنه INSERT خودش auto-commit است
+```
+
+**Session A — همان کوئری دوباره (هنوز داخل تراکنش باز):**
+
+```sql
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- 2  ← phantom: سطر جدید در نتیجه ظاهر شد
+COMMIT;
+```
+
+**چه اتفاقی افتاد؟**
+
+1. Session A سطرهای با `price > 500` را شمرد → `1` (Phone).
+2. Session B لپ‌تاپ (`1299`) را insert کرد و commit کرد.
+3. Session A همان شرط را دوباره اجرا کرد → `2`.
+4. سطر اضافه همان **phantom** است: در نتیجهٔ اول این تراکنش نبود.
+
+**با Isolation قوی‌تر**
+
+همان مراحل را تکرار کن، ولی در Session A:
+
+```sql
+BEGIN;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+-- یا: SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+```
+
+در PostgreSQL، Repeatable Read از snapshot استفاده می‌کند — معمولاً `COUNT(*)` دوم تا قبل از commit همان `1` می‌ماند. Snapshot / Serializable جلوی این phantom را می‌گیرند؛ Read Committed اجازه می‌دهد.
+
 **پیاده‌سازی Isolation در پایگاه‌داده:**
 
 - هر DBMS سطوح Isolation را متفاوت پیاده می‌کند
