@@ -483,6 +483,53 @@ SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
 - **Optimistic** — بدون قفل؛ تغییر را ردیابی می‌کند و در تعارض تراکنش را fail می‌کند
 - Repeatable Read معمولاً سطرهای خوانده‌شده را «قفل» می‌کند؛ روی خواندن زیاد گران است. PostgreSQL معمولاً RR را مثل Snapshot پیاده می‌کند — به همین دلیل معمولاً در Postgres زیر Repeatable Read، Phantom read نمی‌گیری
 
+##### Serializable در برابر Phantom Read
+
+**Phantom read** = تراکنش تو همان `SELECT` را دو بار اجرا می‌کند؛ بین دو اجرا تراکنش دیگری سطرهای مطابق شرط را **INSERT** (یا DELETE) می‌کند و مجموعهٔ نتیجه عوض می‌شود.
+
+**Serializable** سطحی است که برای **جلوگیری از همین کلاس ناهنجاری** طراحی شده (همراه با Dirty و Non-repeatable).
+
+| | Repeatable Read (SQL Server) | Serializable |
+| - | ---------------------------- | ------------ |
+| جلوی UPDATE سطرهایی که خواندی را می‌گیرد؟ | بله | بله |
+| جلوی INSERTهایی که نتیجه را عوض می‌کنند؟ | **خیر** → phantom ممکن است | **بله** → phantom بسته می‌شود |
+| هزینه معمول | کمتر | بیشتر (قفل / range lock بیشتر) |
+
+**Serializable چطور phantom را می‌بندد؟**
+
+- نه فقط سطرهای موجود، بلکه **محدودهٔ شرط** (range کلیدهایی که کوئری پوشش می‌دهد) را هم در نظر می‌گیرد.
+- تا وقتی تراکنش تو باز است، session دیگر نمی‌تواند داخل آن range سطری INSERT کند.
+- بنابراین `SELECT` دوم نمی‌تواند ناگهان سطر مطابق جدید ببیند.
+
+**تفاوت سریع (جدول `TestTable` در SQL Server)**
+
+1. زیر **Repeatable Read**: Session A دو بار select با تأخیر؛ Session B **INSERT** می‌زند → معمولاً موفق → select دوم A ممکن است سطر جدید ببیند (**phantom**).
+2. زیر **Serializable**: همان اسکریپت → **INSERT** در Session B **منتظر** می‌ماند → هر دو select در A یکی می‌مانند → **بدون phantom**.
+
+```sql
+-- Session A
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+BEGIN TRAN;
+SELECT * FROM TestTable;
+WAITFOR DELAY '00:00:10';
+SELECT * FROM TestTable;  -- همان سطرهای select اول
+ROLLBACK;
+```
+
+```sql
+-- Session B (وسط تأخیر)
+INSERT INTO TestTable (Field1, Field2, Field3)
+VALUES (100, 100, 100);  -- تا پایان Session A بلوکه است
+```
+
+**Snapshot در برابر Serializable (هدف یکی، مکانیزم فرق)**
+
+- هر دو می‌خواهند نتیجه بدون phantom باشد.
+- **Serializable** اغلب با **قفل** کار می‌کند (writer ممکن است منتظر بماند).
+- **Snapshot** با **row version** کار می‌کند (writer معمولاً جلو می‌رود؛ reader نسخهٔ قدیمی را نگه می‌دارد).
+
+**نکته PostgreSQL:** Repeatable Read از قبل snapshot-based است؛ معمولاً بدون Serializable هم phantom نمی‌بینی — ولی Serializable هنوز برای تعارض‌های write/write تشخیص قوی‌تری می‌دهد.
+
 #### Durability (دوام)
 
 تراکنش پایدار است: بعد از commit، حتی با قطع برق یا کرش سیستم از بین نمی‌رود. تغییرات کلاینت باید ماندگار بمانند.

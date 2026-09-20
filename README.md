@@ -483,6 +483,53 @@ In PostgreSQL, Repeatable Read uses a snapshot — the second `COUNT(*)` usually
 - **Optimistic** — no locks; track changes and fail the transaction if conflict
 - Repeatable Read often “locks” rows it read; expensive on large reads. PostgreSQL implements RR as snapshot — that is why you typically do not get phantom reads with Postgres under Repeatable Read
 
+##### Serializable vs Phantom Read
+
+**Phantom read** = your transaction runs the same `SELECT` twice; between the two runs another transaction **inserts** (or deletes) rows that match your predicate, so the result set changes.
+
+**Serializable** is the isolation level that is designed to **prevent that class of anomaly** (along with dirty and non-repeatable reads).
+
+| | Repeatable Read (SQL Server) | Serializable |
+| - | ---------------------------- | ------------ |
+| Stops updates to rows you already read? | Yes | Yes |
+| Stops inserts that would change your result set? | **No** → phantoms possible | **Yes** → phantoms blocked |
+| Typical cost | Lower | Higher (more blocking / range locks) |
+
+**How Serializable stops phantoms**
+
+- It treats the predicate (the “range” of keys your query covers), not only the rows that already exist.
+- While your transaction is open, another session cannot insert a row into that range until you commit or roll back.
+- So the second `SELECT` cannot suddenly see a new matching row.
+
+**Quick contrast (SQL Server `TestTable`)**
+
+1. Under **Repeatable Read**: Session A selects twice with a delay; Session B **INSERT**s → often succeeds → Session A’s second select may show the new row (**phantom**).
+2. Under **Serializable**: same script → Session B’s **INSERT** **waits** → both of Session A’s selects stay identical → **no phantom**.
+
+```sql
+-- Session A
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+BEGIN TRAN;
+SELECT * FROM TestTable;
+WAITFOR DELAY '00:00:10';
+SELECT * FROM TestTable;  -- same rows as first select
+ROLLBACK;
+```
+
+```sql
+-- Session B (run during the delay)
+INSERT INTO TestTable (Field1, Field2, Field3)
+VALUES (100, 100, 100);  -- blocked until Session A ends
+```
+
+**Snapshot vs Serializable (same goal, different mechanism)**
+
+- Both aim for a result set free of phantoms.
+- **Serializable** often uses **locks** (writers may wait).
+- **Snapshot** uses **row versions** (writers usually proceed; readers keep the old snapshot).
+
+**PostgreSQL note:** Repeatable Read is already snapshot-based, so phantoms are typically avoided there without needing Serializable — but Serializable still gives stronger conflict detection for write/write races.
+
 #### Durability
 
 A transaction is durable: once committed, it is not lost even if the system fails (power loss, crash). Client changes must persist.
