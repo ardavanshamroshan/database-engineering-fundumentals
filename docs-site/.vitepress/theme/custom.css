@@ -1,146 +1,138 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
 /**
- * DevHints-style dense docs
- * Paper bg · ink text · light code · normal lists · zero chrome theater
+ * Reader theme — one flat surface, soft contrast, no color, no chrome
  */
 
 :root {
-  --ink: #1a1a1a;
-  --mute: #5c5c5c;
-  --faint: #8a8a8a;
-  --line: #e4e4e4;
-  --paper: #fafafa;
-  --code-bg: #f3f3f3;
+  --surface: #e9e9e9;
+  --text: #3f3f3f;
+  --text-soft: #5a5a5a;
+  --text-faint: #777;
+  --line: #d0d0d0;
+  --code: #dedede;
 
-  --vp-c-brand-1: var(--ink);
-  --vp-c-brand-2: #333;
-  --vp-c-brand-3: #000;
+  --vp-c-brand-1: var(--text);
+  --vp-c-brand-2: var(--text-soft);
+  --vp-c-brand-3: var(--text);
   --vp-c-brand-soft: transparent;
 
-  --vp-c-bg: #fff;
-  --vp-c-bg-alt: var(--paper);
-  --vp-c-bg-elv: #fff;
-  --vp-c-bg-soft: var(--code-bg);
+  --vp-c-bg: var(--surface);
+  --vp-c-bg-alt: var(--surface);
+  --vp-c-bg-elv: var(--surface);
+  --vp-c-bg-soft: var(--code);
 
   --vp-c-divider: var(--line);
   --vp-c-gutter: var(--line);
   --vp-c-border: var(--line);
 
-  --vp-c-text-1: var(--ink);
-  --vp-c-text-2: var(--mute);
-  --vp-c-text-3: var(--faint);
+  --vp-c-text-1: var(--text);
+  --vp-c-text-2: var(--text-soft);
+  --vp-c-text-3: var(--text-faint);
 
-  --vp-font-family-base: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --vp-font-family-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --vp-font-family-base: Georgia, 'Times New Roman', Times, serif;
+  --vp-font-family-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --vp-button-brand-bg: var(--ink);
-  --vp-button-brand-hover-bg: #000;
-  --vp-button-brand-text: #fff;
-  --vp-button-brand-hover-text: #fff;
+  --vp-button-brand-bg: var(--text);
+  --vp-button-brand-hover-bg: #2a2a2a;
+  --vp-button-brand-text: var(--surface);
+  --vp-button-brand-hover-text: var(--surface);
 
   --vp-button-alt-bg: transparent;
   --vp-button-alt-hover-bg: transparent;
-  --vp-button-alt-text: var(--ink);
-  --vp-button-alt-hover-text: var(--ink);
+  --vp-button-alt-text: var(--text);
+  --vp-button-alt-hover-text: var(--text);
   --vp-button-alt-border: var(--line);
 
-  --vp-code-color: var(--ink);
-  --vp-code-bg: var(--code-bg);
-  --vp-code-block-bg: #f6f6f6;
-  --vp-code-block-color: var(--ink);
-  --vp-code-lang-color: var(--faint);
+  --vp-code-color: var(--text);
+  --vp-code-bg: var(--code);
+  --vp-code-block-bg: var(--code);
+  --vp-code-block-color: var(--text);
+  --vp-code-lang-color: var(--text-faint);
 
-  --vp-sidebar-bg-color: #fff;
-  --vp-nav-bg-color: rgba(255, 255, 255, 0.95);
+  --vp-sidebar-bg-color: var(--surface);
+  --vp-nav-bg-color: var(--surface);
   --vp-nav-height: 48px;
-
   --vp-layout-max-width: 1280px;
 }
 
 .dark {
-  --ink: #e8e8e8;
-  --mute: #a3a3a3;
-  --faint: #737373;
-  --line: #2a2a2a;
-  --paper: #111;
-  --code-bg: #1c1c1c;
+  --surface: #2b2b2b;
+  --text: #cfcfcf;
+  --text-soft: #b0b0b0;
+  --text-faint: #8e8e8e;
+  --line: #3d3d3d;
+  --code: #242424;
 
-  --vp-c-brand-1: var(--ink);
-  --vp-c-brand-2: #ccc;
-  --vp-c-brand-3: #fff;
+  --vp-c-brand-1: var(--text);
+  --vp-c-brand-2: var(--text-soft);
+  --vp-c-brand-3: var(--text);
 
-  --vp-c-bg: #0e0e0e;
-  --vp-c-bg-alt: #0e0e0e;
-  --vp-c-bg-elv: #141414;
-  --vp-c-bg-soft: #1a1a1a;
+  --vp-c-bg: var(--surface);
+  --vp-c-bg-alt: var(--surface);
+  --vp-c-bg-elv: var(--surface);
+  --vp-c-bg-soft: var(--code);
 
   --vp-c-divider: var(--line);
   --vp-c-gutter: var(--line);
   --vp-c-border: var(--line);
 
-  --vp-c-text-1: var(--ink);
-  --vp-c-text-2: var(--mute);
-  --vp-c-text-3: var(--faint);
+  --vp-c-text-1: var(--text);
+  --vp-c-text-2: var(--text-soft);
+  --vp-c-text-3: var(--text-faint);
 
-  --vp-button-brand-bg: var(--ink);
-  --vp-button-brand-hover-bg: #fff;
-  --vp-button-brand-text: #0e0e0e;
+  --vp-button-brand-bg: var(--text);
+  --vp-button-brand-hover-bg: #e0e0e0;
+  --vp-button-brand-text: var(--surface);
 
-  --vp-button-alt-bg: transparent;
-  --vp-button-alt-hover-bg: transparent;
-  --vp-button-alt-text: var(--ink);
-  --vp-button-alt-hover-text: var(--ink);
+  --vp-button-alt-text: var(--text);
+  --vp-button-alt-hover-text: var(--text);
   --vp-button-alt-border: var(--line);
 
-  --vp-code-color: var(--ink);
-  --vp-code-bg: var(--code-bg);
-  --vp-code-block-bg: #161616;
-  --vp-code-block-color: var(--ink);
+  --vp-code-color: var(--text);
+  --vp-code-bg: var(--code);
+  --vp-code-block-bg: var(--code);
+  --vp-code-block-color: var(--text);
 
-  --vp-sidebar-bg-color: #0e0e0e;
-  --vp-nav-bg-color: rgba(14, 14, 14, 0.9);
+  --vp-sidebar-bg-color: var(--surface);
+  --vp-nav-bg-color: var(--surface);
 }
 
-/* Nav — compact height */
+/* Nav */
 .VPNavBar {
   border-bottom: 1px solid var(--line) !important;
   box-shadow: none !important;
   backdrop-filter: none;
   height: var(--vp-nav-height) !important;
+  background: var(--surface) !important;
 }
 
-.VPNavBar .wrapper {
-  height: var(--vp-nav-height) !important;
-}
-
+.VPNavBar .wrapper,
 .VPNavBar .container {
   height: var(--vp-nav-height) !important;
 }
 
 .VPNavBarTitle .title {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1;
+  font-size: 0.9rem;
+  font-weight: 400;
+  font-family: var(--vp-font-family-base);
 }
 
 .VPNavBarTitle .logo {
   width: 16px;
   height: 16px;
-  margin-right: 7px;
+  margin-right: 8px;
 }
 
 .VPNavBarSearch .DocSearch-Button {
   height: 32px !important;
   margin: 0 !important;
+  background: transparent !important;
 }
 
 .VPNavBarMenuLink,
 .VPNavBarMenuGroup .button {
-  font-size: 0.78125rem !important;
-  font-weight: 500 !important;
-  color: var(--mute) !important;
+  font-size: 0.85rem !important;
+  font-weight: 400 !important;
+  color: var(--text-soft) !important;
   background: transparent !important;
   line-height: var(--vp-nav-height) !important;
   height: var(--vp-nav-height) !important;
@@ -152,35 +144,35 @@
 .VPNavBarMenuGroup .button:hover,
 .VPFlyout:hover .button,
 .VPFlyout.vp-flyout-open .button {
-  color: var(--ink) !important;
+  color: var(--text) !important;
   background: transparent !important;
 }
 
 .VPMenu {
   border: 1px solid var(--line) !important;
-  border-radius: 4px !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
   padding: 4px !important;
-  background: var(--vp-c-bg) !important;
+  background: var(--surface) !important;
 }
 
 .VPMenuLink a {
-  border-radius: 2px !important;
-  font-size: 0.8125rem !important;
+  border-radius: 0 !important;
+  font-size: 0.85rem !important;
   background: transparent !important;
 }
 
 .VPMenuLink a:hover,
 .VPMenuLink.active a {
   background: transparent !important;
-  color: var(--ink) !important;
+  color: var(--text) !important;
   text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
+/* Sidebar — same surface, clears sticky nav */
 .VPSidebar {
   border-right: 1px solid var(--line);
-  /* keep VitePress top offset so content clears sticky nav */
+  background: var(--surface) !important;
   padding-top: var(--vp-nav-height) !important;
   padding-right: 8px !important;
   padding-bottom: 12px !important;
@@ -192,6 +184,7 @@
 .VPSidebar .curtain {
   margin-top: calc(var(--vp-nav-height) * -1) !important;
   height: var(--vp-nav-height) !important;
+  background: var(--surface) !important;
 }
 
 .VPSidebar > .nav {
@@ -200,11 +193,11 @@
 }
 
 .VPSidebarItem.level-0 > .item .text {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-faint);
   padding: 8px 8px 4px !important;
 }
 
@@ -213,28 +206,25 @@
 }
 
 .VPSidebarItem.level-1 .item .link {
-  font-size: 0.8125rem !important;
+  font-size: 0.85rem !important;
   font-weight: 400 !important;
-  color: var(--mute) !important;
-  padding: 3px 8px !important;
+  color: var(--text-soft) !important;
+  padding: 4px 8px !important;
   line-height: 1.4 !important;
   border-radius: 0 !important;
   background: transparent !important;
   border: 0 !important;
+  font-family: var(--vp-font-family-base);
 }
 
-.VPSidebarItem.level-1 .item .link:hover {
-  color: var(--ink) !important;
-  background: transparent !important;
-}
-
+.VPSidebarItem.level-1 .item .link:hover,
 .VPSidebarItem.is-active > .item .link {
-  color: var(--ink) !important;
-  font-weight: 600 !important;
+  color: var(--text) !important;
   background: transparent !important;
+  font-weight: 400 !important;
 }
 
-/* Sidebar author card */
+/* Author */
 .sidebar-profile {
   margin-top: auto;
   padding: 12px 8px 4px;
@@ -246,13 +236,7 @@
   align-items: center;
   gap: 0.65rem;
   text-decoration: none !important;
-  color: var(--ink) !important;
-  background: none !important;
-  padding: 4px 0;
-}
-
-.sidebar-profile__main:hover {
-  text-decoration: none !important;
+  color: var(--text) !important;
   background: none !important;
 }
 
@@ -261,7 +245,6 @@
   height: 36px;
   border-radius: 50%;
   object-fit: cover;
-  flex-shrink: 0;
   border: 1px solid var(--line);
 }
 
@@ -269,113 +252,106 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  min-width: 0;
 }
 
 .sidebar-profile__meta strong {
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
+  font-size: 0.8rem;
+  font-weight: 400;
 }
 
 .sidebar-profile__meta em {
   font-style: normal;
-  font-size: 0.68rem;
-  color: var(--faint);
+  font-size: 0.7rem;
+  color: var(--text-faint);
 }
 
 .sidebar-profile__links {
   display: flex;
   flex-wrap: wrap;
   gap: 0.15rem 0.65rem;
-  margin-top: 0.55rem;
-  padding-left: 2px;
+  margin-top: 0.5rem;
 }
 
 .sidebar-profile__links a {
   font-size: 0.7rem;
-  color: var(--mute) !important;
-  text-decoration: none !important;
-  background: none !important;
-  font-weight: 500;
-}
-
-.sidebar-profile__links a:hover {
-  color: var(--ink) !important;
+  color: var(--text-soft) !important;
   text-decoration: underline !important;
-  text-underline-offset: 2px;
   background: none !important;
+  font-weight: 400;
 }
 
-/* Doc — dense cheatsheet body */
+/* Body — easy reading */
 .VPDoc {
-  padding-top: 24px !important;
-  padding-bottom: 56px !important;
+  padding-top: 28px !important;
+  padding-bottom: 64px !important;
+  background: var(--surface) !important;
 }
 
 .VPDoc .content-container {
-  max-width: 720px !important;
+  max-width: 680px !important;
+}
+
+.VPContent,
+.VPContent.has-sidebar {
+  background: var(--surface) !important;
 }
 
 .vp-doc {
-  font-size: 0.9rem;
-  line-height: 1.55;
-  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  color: var(--text);
+  font-weight: 400;
 }
 
 .vp-doc h1 {
-  font-size: 1.5rem !important;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-  margin: 0 0 0.5rem !important;
+  font-size: 1.55rem !important;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.3;
+  margin: 0 0 0.75rem !important;
   padding: 0 !important;
   border: 0 !important;
+  color: var(--text);
 }
 
 .vp-doc h2 {
-  font-size: 1.05rem !important;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 1.2rem !important;
+  font-weight: 400;
+  letter-spacing: 0;
   line-height: 1.35;
-  margin: 1.85rem 0 0.5rem !important;
+  margin: 2rem 0 0.65rem !important;
   padding: 0 !important;
   border: 0 !important;
+  color: var(--text);
 }
 
 .vp-doc h2:first-of-type {
-  margin-top: 1rem !important;
+  margin-top: 1.25rem !important;
 }
 
 .vp-doc h3 {
-  font-size: 0.925rem !important;
-  font-weight: 600;
-  line-height: 1.35;
-  margin: 1.1rem 0 0.35rem !important;
+  font-size: 1.08rem !important;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 1.35rem 0 0.45rem !important;
   padding: 0 !important;
+  color: var(--text);
 }
 
-/* Permalink # — same baseline as heading text */
-.vp-doc .header-anchor {
-  float: left;
-  margin-left: -0.87em;
-  padding-right: 0.23em;
-  font-size: 0.85em !important;
-  font-weight: 500;
-  line-height: inherit !important;
-  top: 0 !important;
-  transform: translateY(0.05em);
-  text-decoration: none !important;
+.vp-doc h4,
+.vp-doc h5,
+.vp-doc h6 {
+  font-weight: 400;
+  color: var(--text);
 }
 
 .vp-doc p {
-  margin: 0.4rem 0 !important;
+  margin: 0.65rem 0 !important;
 }
 
 .vp-doc a {
-  color: var(--ink);
-  font-weight: 500;
+  color: var(--text);
+  font-weight: 400;
   text-decoration: underline;
   text-decoration-color: var(--line);
   text-underline-offset: 2px;
@@ -383,48 +359,45 @@
 }
 
 .vp-doc a:hover {
-  text-decoration-color: var(--ink);
+  text-decoration-color: var(--text);
   background: none !important;
 }
 
-/* Lists — real discs, tight */
+.vp-doc .header-anchor {
+  float: left;
+  margin-left: -0.87em;
+  padding-right: 0.23em;
+  font-size: 0.85em !important;
+  font-weight: 400;
+  line-height: inherit !important;
+  color: var(--text-faint);
+  text-decoration: none !important;
+}
+
+.vp-doc ul,
+.vp-doc ol {
+  padding-left: 1.25rem !important;
+  margin: 0.5rem 0 0.85rem !important;
+}
+
 .vp-doc ul {
   list-style: disc !important;
-  padding-left: 1.15rem !important;
-  margin: 0.35rem 0 0.7rem !important;
 }
 
-.vp-doc ul > li {
-  margin: 0.15rem 0 !important;
+.vp-doc li {
+  margin: 0.25rem 0 !important;
   padding: 0 !important;
   border: 0 !important;
-  line-height: 1.45;
-}
-
-.vp-doc ul > li::before {
-  content: none !important;
-}
-
-.vp-doc ol {
-  padding-left: 1.15rem !important;
-  margin: 0.35rem 0 0.7rem !important;
-}
-
-.vp-doc ol > li {
-  margin: 0.15rem 0 !important;
-}
-
-.vp-doc li > ul,
-.vp-doc li > ol {
-  margin: 0.1rem 0 0.2rem !important;
+  line-height: 1.65;
 }
 
 .vp-doc table {
   display: table;
   width: 100%;
-  font-size: 0.8125rem;
-  margin: 0.6rem 0 !important;
+  font-size: 0.95rem;
+  margin: 0.85rem 0 !important;
   border-collapse: collapse;
+  background: transparent !important;
 }
 
 .vp-doc tr {
@@ -440,28 +413,44 @@
 .vp-doc td {
   border: 0 !important;
   border-bottom: 1px solid var(--line) !important;
-  padding: 0.4rem 0.35rem !important;
+  padding: 0.45rem 0.35rem !important;
   text-align: left;
+  background: transparent !important;
 }
 
 .vp-doc th {
-  font-weight: 600;
-  color: var(--faint);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-weight: 400;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.vp-doc hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 1.5rem 0;
+}
+
+.vp-doc blockquote {
+  margin: 0.85rem 0;
+  padding: 0 0 0 0.85rem;
+  border-left: 2px solid var(--line);
+  border-radius: 0;
+  background: transparent !important;
+  color: var(--text-soft);
 }
 
 .lead {
   margin: 0 0 1.25rem !important;
   max-width: 36rem;
-  color: var(--mute);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  color: var(--text-soft);
+  font-size: 1.05rem;
+  line-height: 1.65;
   font-weight: 400;
 }
 
-/* DB hero — logo + title, no box */
+/* DB hero */
 .db-hero {
   display: flex;
   align-items: center;
@@ -469,17 +458,19 @@
   margin: 0 0 1.25rem;
   padding: 0 0 0.75rem;
   border-bottom: 1px solid var(--line);
+  background: none;
 }
 
 .db-hero h1 {
   margin: 0 !important;
-  font-size: 1.4rem !important;
+  font-size: 1.45rem !important;
 }
 
 .db-hero__blurb {
   margin: 0.1rem 0 0;
-  color: var(--faint);
-  font-size: 0.75rem;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  font-family: var(--vp-font-family-mono);
 }
 
 .db-logo {
@@ -488,6 +479,8 @@
   height: 22px;
   flex-shrink: 0;
   background: center / contain no-repeat;
+  opacity: 0.85;
+  filter: grayscale(1);
 }
 
 .db-hero .db-logo {
@@ -503,7 +496,7 @@
 .db-logo--cassandra { background-image: url('./logos/cassandra.svg'); }
 .db-logo--scylladb { background-image: url('./logos/scylladb.svg'); }
 
-/* Home catalog — simple link rows */
+/* Home catalog */
 .catalog {
   list-style: none !important;
   padding: 0 !important;
@@ -517,25 +510,20 @@
   list-style: none !important;
 }
 
-.catalog > li::before {
-  content: none !important;
-}
-
 .catalog a {
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
-  padding: 0.45rem 0;
+  padding: 0.5rem 0;
   border-bottom: 1px solid var(--line);
-  color: var(--ink) !important;
+  color: var(--text) !important;
   text-decoration: none !important;
   background: none !important;
-  font-size: 0.875rem;
+  font-size: 1rem;
 }
 
 .catalog a:hover {
   text-decoration: underline !important;
-  text-underline-offset: 2px;
   background: none !important;
 }
 
@@ -547,127 +535,114 @@
 
 .catalog a strong {
   flex: 1;
-  font-weight: 550;
+  font-weight: 400;
 }
 
 .catalog a em {
   font-style: normal;
-  font-size: 0.75rem;
-  color: var(--faint);
+  font-size: 0.85rem;
+  color: var(--text-faint);
   font-weight: 400;
 }
 
-.catalog.plain a {
-  gap: 0.75rem;
-}
-
-/* Code — light blocks, tight */
+/* Code — same surface family, no white boxes */
 .vp-doc div[class*='language-'] {
-  margin: 0.6rem 0 !important;
+  margin: 0.85rem 0 !important;
   border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--vp-code-block-bg) !important;
+  border-radius: 0;
+  background: var(--code) !important;
   box-shadow: none;
   overflow: hidden;
 }
 
 .vp-doc div[class*='language-'] pre {
-  padding: 10px 12px !important;
+  padding: 12px 14px !important;
   margin: 0 !important;
+  background: transparent !important;
 }
 
 .vp-doc div[class*='language-'] code {
-  font-size: 0.78rem;
-  line-height: 1.5;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text) !important;
 }
 
 .vp-doc div[class*='language-'] .lang {
-  top: 6px;
-  right: 36px;
-  font-size: 0.625rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--faint);
+  color: var(--text-faint);
   font-family: var(--vp-font-family-base);
 }
 
 .vp-doc div[class*='language-'] > button.copy {
-  top: 4px;
-  right: 4px;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 3px;
   background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .vp-doc :not(pre) > code {
-  font-size: 0.84em;
-  font-weight: 500;
+  font-size: 0.9em;
+  font-weight: 400;
   padding: 0.1em 0.3em;
-  border-radius: 3px;
-  background: var(--code-bg);
-  color: var(--ink);
+  border-radius: 0;
+  background: var(--code);
+  color: var(--text);
   border: 0;
+}
+
+/* Mute colorful shiki tokens toward grayscale readability */
+.vp-doc .shiki span {
+  color: var(--text) !important;
+}
+
+.vp-doc .shiki .line span[style*='--shiki'] {
+  color: var(--text) !important;
 }
 
 /* Aside / footer */
 .VPDocAsideOutline .outline-title {
-  font-size: 0.6875rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--faint) !important;
+  font-size: 0.75rem !important;
+  font-weight: 400 !important;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-faint) !important;
 }
 
 .VPDocAsideOutline .outline-link {
-  font-size: 0.75rem !important;
-  color: var(--mute) !important;
+  font-size: 0.8rem !important;
+  color: var(--text-soft) !important;
   background: none !important;
 }
 
 .VPDocAsideOutline .outline-link:hover,
 .VPDocAsideOutline .outline-link.active {
-  color: var(--ink) !important;
+  color: var(--text) !important;
   background: none !important;
 }
 
 .VPFooter {
   display: block !important;
   border-top: 1px solid var(--line) !important;
-  background: var(--paper) !important;
+  background: var(--surface) !important;
   padding: 1.25rem 1.5rem !important;
-}
-
-.VPFooter .container {
-  max-width: var(--vp-layout-max-width);
-  margin: 0 auto;
 }
 
 .VPFooter .message,
 .VPFooter .copyright {
-  font-size: 0.72rem !important;
-  color: var(--faint) !important;
-  line-height: 1.5;
+  font-size: 0.75rem !important;
+  color: var(--text-faint) !important;
 }
 
 .VPFooter .message a {
-  color: var(--mute) !important;
+  color: var(--text-soft) !important;
   text-decoration: underline;
-  text-underline-offset: 2px;
-  font-weight: 500;
-}
-
-.VPFooter .message a:hover {
-  color: var(--ink) !important;
+  font-weight: 400;
 }
 
 .VPLocalNav {
   border-bottom: 1px solid var(--line) !important;
+  background: var(--surface) !important;
 }
 
-/* Keep content clear of compact sticky nav */
 .Layout {
   --vp-nav-height: 48px;
+  background: var(--surface);
 }
