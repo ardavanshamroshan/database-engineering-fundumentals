@@ -180,9 +180,18 @@
 
 .VPSidebar {
   border-right: 1px solid var(--line);
-  padding: 12px 8px 12px !important;
+  /* keep VitePress top offset so content clears sticky nav */
+  padding-top: var(--vp-nav-height) !important;
+  padding-right: 8px !important;
+  padding-bottom: 12px !important;
+  padding-left: 8px !important;
   display: flex;
   flex-direction: column;
+}
+
+.VPSidebar .curtain {
+  margin-top: calc(var(--vp-nav-height) * -1) !important;
+  height: var(--vp-nav-height) !important;
 }
 
 .VPSidebar > .nav {
