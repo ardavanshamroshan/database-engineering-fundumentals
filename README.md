@@ -124,6 +124,82 @@ To allow undo when needed, changes are first written to memory; only after confi
 
 A transaction is an atomic unit of work that either succeeds or fails as a whole. All queries in a transaction must succeed or fail together.
 
+##### Lab: prove Atomicity with an unfinished transaction (PostgreSQL)
+
+**Goal:** Show that an uncommitted change does **not** become permanent. If the session ends without `COMMIT`, PostgreSQL rolls the transaction back — all-or-nothing.
+
+**What we expect**
+
+| Moment | `products.inventory` |
+| ------ | -------------------- |
+| Before `BEGIN` | `10` |
+| Inside open transaction after `UPDATE` | `0` (visible only in this session) |
+| After disconnect without `COMMIT` | `10` again (rollback) |
+
+**Why this proves Atomicity**
+
+- Inside the transaction you *see* inventory go to `0`.
+- You never call `COMMIT`.
+- Exiting `psql` aborts the open transaction → automatic `ROLLBACK`.
+- The unit of work did not complete → none of its changes survive.
+- That is Atomicity: succeed entirely, or leave the database as if the work never ran.
+
+> **Note:** You also touch Durability indirectly: only *committed* work is durable. Uncommitted work must disappear on abort.
+
+**1) Setup**
+
+```sql
+CREATE DATABASE app;
+\c app
+
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,
+  name TEXT,
+  price FLOAT,
+  inventory INTEGER
+);
+
+CREATE TABLE sales (
+  id SERIAL PRIMARY KEY,
+  product_id INTEGER,
+  price FLOAT,
+  quantity INTEGER
+);
+
+INSERT INTO products (id, name, price, inventory)
+VALUES (1, 'Phone', 999.99, 10);
+
+SELECT * FROM products;
+-- id=1, name=Phone, price=999.99, inventory=10
+```
+
+**2) Start a transaction and change inventory (do not commit)**
+
+```sql
+BEGIN;
+
+UPDATE products SET inventory = inventory - 10;
+
+SELECT * FROM products;
+-- inventory is 0 in this session
+```
+
+**3) Leave without `COMMIT`**
+
+Exit the client (e.g. quit `psql`) while the transaction is still open. PostgreSQL aborts it.
+
+**4) Reconnect and check**
+
+```sql
+\c app
+SELECT * FROM products;
+-- inventory is 10 again
+```
+
+**Result:** The `UPDATE` looked real inside the transaction, but after abort the database returned to the previous valid state. Atomic unit = all or nothing.
+
+**Try next (optional):** Repeat the same steps, but run `COMMIT;` before exiting. After reconnect, inventory should stay `0`.
+
 #### Consistency
 
 A transaction must bring the database from one valid state to another.

@@ -124,6 +124,82 @@ COMMIT;
 
 تراکنش یک واحد اتمیک است که یا کامل موفق می‌شود یا کامل شکست می‌خورد. همه کوئری‌های داخل تراکنش باید با هم موفق یا با هم ناموفق باشند.
 
+##### آزمایش: اثبات Atomicity با تراکنش ناتمام (PostgreSQL)
+
+**هدف:** نشان بده تغییر commit‌نشده دائمی نمی‌شود. اگر session بدون `COMMIT` تمام شود، PostgreSQL تراکنش را rollback می‌کند — همه یا هیچ.
+
+**انتظار ما**
+
+| لحظه | `products.inventory` |
+| ---- | -------------------- |
+| قبل از `BEGIN` | `10` |
+| داخل تراکنش باز، بعد از `UPDATE` | `0` (فقط در همین session دیده می‌شود) |
+| بعد از قطع اتصال بدون `COMMIT` | دوباره `10` (rollback) |
+
+**چرا این آزمایش Atomicity را ثابت می‌کند؟**
+
+- داخل تراکنش موجودی را `0` می‌بینی.
+- هرگز `COMMIT` نمی‌زنی.
+- با خروج از `psql` تراکنش باز abort می‌شود → خودکار `ROLLBACK`.
+- واحد کار کامل نشد → هیچ‌کدام از تغییراتش باقی نمی‌ماند.
+- این همان Atomicity است: یا کامل موفق، یا طوری که انگار اصلاً اجرا نشده.
+
+> **نکته:** اینجا غیرمستقیم Durability هم دیده می‌شود: فقط کار *commit‌شده* ماندگار است. کار commit‌نشده بعد از abort باید ناپدید شود.
+
+**۱) آماده‌سازی**
+
+```sql
+CREATE DATABASE app;
+\c app
+
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,
+  name TEXT,
+  price FLOAT,
+  inventory INTEGER
+);
+
+CREATE TABLE sales (
+  id SERIAL PRIMARY KEY,
+  product_id INTEGER,
+  price FLOAT,
+  quantity INTEGER
+);
+
+INSERT INTO products (id, name, price, inventory)
+VALUES (1, 'Phone', 999.99, 10);
+
+SELECT * FROM products;
+-- id=1, name=Phone, price=999.99, inventory=10
+```
+
+**۲) شروع تراکنش و تغییر موجودی (بدون commit)**
+
+```sql
+BEGIN;
+
+UPDATE products SET inventory = inventory - 10;
+
+SELECT * FROM products;
+-- در همین session موجودی 0 است
+```
+
+**۳) خروج بدون `COMMIT`**
+
+کلاینت را ببند (مثلاً خروج از `psql`) در حالی که تراکنش هنوز باز است. PostgreSQL آن را abort می‌کند.
+
+**۴) اتصال دوباره و بررسی**
+
+```sql
+\c app
+SELECT * FROM products;
+-- موجودی دوباره 10 است
+```
+
+**نتیجه:** داخل تراکنش `UPDATE` واقعی به نظر می‌رسید، ولی بعد از abort پایگاه‌داده به حالت معتبر قبلی برگشت. واحد اتمیک = همه یا هیچ.
+
+**گام اختیاری بعدی:** همین مراحل را تکرار کن، فقط قبل از خروج `COMMIT;` بزن. بعد از reconnect موجودی باید `0` بماند.
+
 #### Consistency (سازگاری)
 
 تراکنش باید پایگاه‌داده را از یک حالت معتبر به حالت معتبر دیگر ببرد.
