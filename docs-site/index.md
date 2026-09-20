@@ -1,28 +1,40 @@
 ---
-layout: home
-title: Database Engineering
-hero:
-  name: Database Engineering
-  text: Fundamentals and practical references
-  tagline: SQL and NoSQL study notes — cheatsheets, chapter path, and sources in one place.
-  actions:
-    - theme: brand
-      text: Fundamentals
-      link: /fundamentals/
-    - theme: alt
-      text: Browse cheatsheets
-      link: /sql/
-features:
-  - title: Fundamentals
-    details: Chapter-by-chapter path for Database Engineering Fundamentals — ACID, indexing, sharding, replication, and more.
-    link: /fundamentals/
-    linkText: Open study path
-  - title: SQL
-    details: Relational references for PostgreSQL, MySQL, and SQLite — clients, DDL/DML, admin, and ops.
-    link: /sql/
-    linkText: SQL docs
-  - title: NoSQL
-    details: Document, key-value, and wide-column engines — Redis, MongoDB, Cassandra, and ScyllaDB.
-    link: /nosql/
-    linkText: NoSQL docs
+title: Home
 ---
+
+# Database Engineering
+
+<p class="lead">
+  Study path and cheatsheets for SQL and NoSQL — minimal reference, easy to scan.
+</p>
+
+## Fundamentals
+
+<ul class="doc-links">
+  <li>
+    <a href="./fundamentals/">Study path <span>17 chapters</span></a>
+  </li>
+  <li>
+    <a href="https://github.com/ardavanshamroshan/database-engineering-fundumentals/blob/main/README.md">English notes <span>GitHub</span></a>
+  </li>
+  <li>
+    <a href="https://github.com/ardavanshamroshan/database-engineering-fundumentals/blob/main/README.fa.md">Persian notes <span>GitHub</span></a>
+  </li>
+</ul>
+
+## SQL
+
+<ul class="doc-links">
+  <li><a href="./sql/postgresql">PostgreSQL <span>psql · admin · ops</span></a></li>
+  <li><a href="./sql/mysql">MySQL <span>mysql · InnoDB</span></a></li>
+  <li><a href="./sql/sqlite">SQLite <span>embedded · pragmas</span></a></li>
+</ul>
+
+## NoSQL
+
+<ul class="doc-links">
+  <li><a href="./nosql/redis">Redis <span>cache · streams</span></a></li>
+  <li><a href="./nosql/mongodb">MongoDB <span>documents · agg</span></a></li>
+  <li><a href="./nosql/cassandra">Cassandra <span>CQL · cluster</span></a></li>
+  <li><a href="./nosql/scylladb">ScyllaDB <span>CQL · shards</span></a></li>
+</ul>

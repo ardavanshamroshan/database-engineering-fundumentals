@@ -3,10 +3,36 @@ import { defineConfig } from 'vitepress'
 const repo = 'https://github.com/ardavanshamroshan/database-engineering-fundumentals'
 const base = '/database-engineering-fundumentals/'
 
+const sidebar = [
+  {
+    text: 'Start',
+    items: [
+      { text: 'Home', link: '/' },
+      { text: 'Fundamentals', link: '/fundamentals/' },
+    ],
+  },
+  {
+    text: 'SQL',
+    items: [
+      { text: 'PostgreSQL', link: '/sql/postgresql' },
+      { text: 'MySQL', link: '/sql/mysql' },
+      { text: 'SQLite', link: '/sql/sqlite' },
+    ],
+  },
+  {
+    text: 'NoSQL',
+    items: [
+      { text: 'Redis', link: '/nosql/redis' },
+      { text: 'MongoDB', link: '/nosql/mongodb' },
+      { text: 'Cassandra', link: '/nosql/cassandra' },
+      { text: 'ScyllaDB', link: '/nosql/scylladb' },
+    ],
+  },
+]
+
 export default defineConfig({
   title: 'Database Engineering',
-  description:
-    'Fundamentals study path and practical cheatsheets for SQL and NoSQL databases.',
+  description: 'Fundamentals and cheatsheets for SQL and NoSQL databases.',
   base,
   outDir: '../docs',
   cleanUrls: true,
@@ -15,57 +41,44 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: `${base}favicon.svg` }],
-    ['meta', { name: 'theme-color', content: '#0f1419' }],
+    ['meta', { name: 'theme-color', content: '#ffffff' }],
+    [
+      'link',
+      {
+        rel: 'preconnect',
+        href: 'https://fonts.googleapis.com',
+      },
+    ],
+    [
+      'link',
+      {
+        rel: 'preconnect',
+        href: 'https://fonts.gstatic.com',
+        crossorigin: '',
+      },
+    ],
   ],
 
   themeConfig: {
     siteTitle: 'Database Engineering',
-    logo: undefined,
     nav: [
       { text: 'Fundamentals', link: '/fundamentals/' },
-      { text: 'SQL', link: '/sql/' },
-      { text: 'NoSQL', link: '/nosql/' },
       {
-        text: 'Repo',
+        text: 'Cheatsheets',
         items: [
-          { text: 'GitHub', link: repo },
-          { text: 'English notes', link: `${repo}/blob/main/README.md` },
-          { text: 'Persian notes', link: `${repo}/blob/main/README.fa.md` },
+          { text: 'PostgreSQL', link: '/sql/postgresql' },
+          { text: 'MySQL', link: '/sql/mysql' },
+          { text: 'SQLite', link: '/sql/sqlite' },
+          { text: 'Redis', link: '/nosql/redis' },
+          { text: 'MongoDB', link: '/nosql/mongodb' },
+          { text: 'Cassandra', link: '/nosql/cassandra' },
+          { text: 'ScyllaDB', link: '/nosql/scylladb' },
         ],
       },
+      { text: 'GitHub', link: repo },
     ],
 
-    sidebar: {
-      '/fundamentals/': [
-        {
-          text: 'Fundamentals',
-          items: [{ text: 'Study path', link: '/fundamentals/' }],
-        },
-      ],
-      '/sql/': [
-        {
-          text: 'SQL',
-          items: [
-            { text: 'Overview', link: '/sql/' },
-            { text: 'PostgreSQL', link: '/sql/postgresql' },
-            { text: 'MySQL', link: '/sql/mysql' },
-            { text: 'SQLite', link: '/sql/sqlite' },
-          ],
-        },
-      ],
-      '/nosql/': [
-        {
-          text: 'NoSQL',
-          items: [
-            { text: 'Overview', link: '/nosql/' },
-            { text: 'Redis', link: '/nosql/redis' },
-            { text: 'MongoDB', link: '/nosql/mongodb' },
-            { text: 'Cassandra', link: '/nosql/cassandra' },
-            { text: 'ScyllaDB', link: '/nosql/scylladb' },
-          ],
-        },
-      ],
-    },
+    sidebar,
 
     socialLinks: [{ icon: 'github', link: repo }],
 
@@ -74,12 +87,13 @@ export default defineConfig({
     },
 
     footer: {
-      message: 'Personal learning notes · Ardavan ShamRoshan',
-      copyright: 'Source on GitHub',
+      message: 'Ardavan ShamRoshan',
+      copyright: 'Database Engineering Fundamentals',
     },
 
     outline: {
       level: [2, 3],
+      label: 'On this page',
     },
   },
 })
