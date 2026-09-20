@@ -221,9 +221,11 @@ SELECT * FROM products;
 
 #### Isolation (انزوا)
 
-**Isolation Level** مشخص می‌کند تراکنش‌های هم‌زمان چطور روی دادهٔ هم قفل بگذارند و چه چیزی از هم ببینند.
+**Isolation Level** مشخص می‌کند تراکنش‌های هم‌زمان چه نسخه‌ای از دادهٔ هم را می‌بینند.
 
-مثال ساده: یک تراکنش `UPDATE` می‌زند، دیگری روی همان سطرها `SELECT` می‌کند. سطح Isolation تصمیم می‌گیرد خواننده منتظر بماند، دادهٔ قدیمی ببیند، دادهٔ commit‌نشده ببیند، یا snapshot ببیند.
+PostgreSQL از **MVCC** (کنترل همزمانی چندنسخه‌ای) استفاده می‌کند: معمولاً خواننده نویسنده را بلوکه نمی‌کند و برعکس. Isolation فقط تعیین می‌کند *کدام نسخه* سطر را می‌بینی.
+
+مثال ساده: یک تراکنش `UPDATE` می‌زند، دیگری روی همان سطرها `SELECT` می‌کند. سطح Isolation تصمیم می‌گیرد خواننده نسخهٔ قدیمی را ببیند، منتظر بماند، یا snapshot ثابت از شروع تراکنش را ببیند.
 
 سؤال: آیا تراکنش در حال اجرا می‌تواند تغییرات تراکنش‌های دیگر را ببیند؟
 
@@ -246,7 +248,9 @@ UPDATE products SET quantity = quantity - 1 WHERE id = 1;
 
 **Dirty read (خواندن کثیف)** — تراکنش A داده را عوض کرده ولی هنوز commit نکرده. `SELECT` تراکنش B همان تغییرات معلق را می‌خواند. اگر A بعداً rollback کند، B از قبل دادهٔ نامعتبر دیده است.
 
-**Phantom read (خواندن شبح)** — وسط `SELECT`های تراکنش A، تراکنش دیگری سطرهایی مطابق شرط A را INSERT (یا DELETE) می‌کند. `SELECT` بعدی A مجموعهٔ سطرهای متفاوتی می‌بیند — سطرهای «شبح» ظاهر (یا غیب) می‌شوند.
+**Non-repeatable read** — سطری را می‌خوانی؛ تراکنش دیگر UPDATE/DELETE را commit می‌کند؛ `SELECT` بعدی تو مقدار متفاوت (یا بدون سطر) می‌بیند.
+
+**Phantom read (خواندن شبح)** — وسط `SELECT`های تراکنش A، تراکنش دیگری سطرهای مطابق شرط A را INSERT (یا DELETE) می‌کند. `SELECT` بعدی A مجموعهٔ متفاوتی می‌بیند.
 
 | ناهنجاری | چه چیزی عوض شد؟ |
 | -------- | --------------- |
@@ -254,182 +258,157 @@ UPDATE products SET quantity = quantity - 1 WHERE id = 1;
 | Non-repeatable read | یک **سطر موجود** که قبلاً خوانده بودی **آپدیت** (یا حذف) شد |
 | Phantom read | **مجموعه سطرهای** مطابق کوئری بزرگ/کوچک شد |
 
-##### سطوح Isolation (نمای کلی)
+##### سطوح Isolation در PostgreSQL (نمای کلی)
 
-| سطح | رفتار معمول | Dirty | Non-repeatable | Phantom |
-| --- | ----------- | ----- | -------------- | ------- |
-| **Read Uncommitted** | تقریباً بدون قفل خواندن؛ دادهٔ commit‌نشده هم دیده می‌شود | 🔴 | 🔴 | 🔴 |
-| **Read Committed** | پیش‌فرض SQL Server / PostgreSQL؛ فقط دادهٔ commit‌شده | 🟢 | 🔴 | 🔴 |
-| **Repeatable Read** | سطرهایی که خواندی تا پایان تراکنش پایدار می‌مانند؛ نویسنده‌ها منتظر می‌مانند | 🟢 | 🟢 | 🔴 (SQL Server) / اغلب 🟢 (snapshot در PostgreSQL) |
-| **Serializable** | مثل Repeatable Read + جلوی INSERTهایی که phantom می‌سازند | 🟢 | 🟢 | 🟢 |
-| **Snapshot** | نتیجه پایدار بدون قفل‌گذاری مشابه روی writerها؛ نسخه‌ها در tempdb (SQL Server) | 🟢 | 🟢 | 🟢 |
+| سطح | رفتار در PostgreSQL | Dirty | Non-repeatable | Phantom |
+| --- | ------------------- | ----- | -------------- | ------- |
+| **Read Uncommitted** | پذیرفته می‌شود، ولی مثل **Read Committed** عمل می‌کند (Dirty واقعی نیست) | 🟢 | 🔴 | 🔴 |
+| **Read Committed** | **پیش‌فرض.** هر statement فقط دادهٔ commit‌شده قبل از شروع همان statement را می‌بیند | 🟢 | 🔴 | 🔴 |
+| **Repeatable Read** | Snapshot از لحظهٔ شروع تراکنش؛ خواندن پایدار؛ معمولاً بدون phantom | 🟢 | 🟢 | 🟢 |
+| **Serializable** | Snapshot + تشخیص تعارض (SSI)؛ ممکن است تراکنش با serialization failure abort شود | 🟢 | 🟢 | 🟢 |
 
-##### آماده‌سازی آزمایش‌های SQL Server
+> در PostgreSQL سطح جداگانه‌ای به نام **`SNAPSHOT`** نیست. **Repeatable Read** همان رفتار snapshot isolation را می‌دهد. **Serializable** قوی‌تر است (SSI).
 
-نمونه‌های زیر الگوی کلاسیک دو پنجره Query در SQL Server هستند. یک‌بار بساز:
+##### آماده‌سازی آزمایش‌های PostgreSQL
+
+دو session جدا در `psql` به دیتابیس `app` وصل کن (همان DB آزمایش Atomicity، یا بساز). یک‌بار:
 
 ```sql
-CREATE DATABASE IsolationLevelTest;
-GO
-USE IsolationLevelTest;
-GO
+CREATE DATABASE app;          -- اگر از قبل هست رد شو
+\c app
 
-CREATE TABLE TestTable
-(
-  ID INT IDENTITY,
-  Field1 INT NULL,
-  Field2 INT NULL,
-  Field3 INT NULL
+DROP TABLE IF EXISTS test_table;
+CREATE TABLE test_table (
+  id SERIAL PRIMARY KEY,
+  field1 INT,
+  field2 INT,
+  field3 INT
 );
-GO
 
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
+INSERT INTO test_table (field1, field2, field3) VALUES
+  (1, 2, 3),
+  (1, 2, 3),
+  (1, 2, 3),
+  (1, 2, 3);
 ```
 
-##### ۱) Read Uncommitted
+برای فرصت سوییچ بین sessionها از `pg_sleep(10)` استفاده کن.
 
-پایین‌ترین سطح: برای خواننده تقریباً قفلی نیست. session دیگر می‌تواند داده‌ای را بخواند (یا حتی عوض کند) که هنوز داخل تراکنش باز است. `SELECT` ممکن است مقداری بدهد که هنوز نهایی نیست → **Dirty read**.
+##### ۱) Read Uncommitted (در PostgreSQL = Read Committed)
+
+در استاندارد SQL ضعیف‌ترین سطح است و می‌تواند Dirty read بدهد. **در PostgreSQL، `READ UNCOMMITTED` مثل `READ COMMITTED` رفتار می‌کند** — دادهٔ commit‌نشده session دیگر را نمی‌بینی.
 
 **Session 1:**
 
 ```sql
-BEGIN TRAN;
-UPDATE TestTable SET Field1 = 2;
-WAITFOR DELAY '00:00:10';
+BEGIN;
+UPDATE test_table SET field1 = 2;
+SELECT pg_sleep(10);
 ROLLBACK;
 ```
 
-**Session 2 (سریع، وقتی Session 1 منتظر است):**
+**Session 2 (وسط sleep سشن ۱):**
 
 ```sql
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-SELECT * FROM TestTable;
+SELECT * FROM test_table;
 ```
 
-اجرای اول Session 2 اغلب `Field1 = 2` را نشان می‌دهد، حتی اگر Session 1 بعداً rollback کند. ۱۰ ثانیه صبر کن و دوباره select بزن — مقادیر به حالت قبل برمی‌گردند. همان select اول Dirty read بود.
+هنوز مقادیر **قدیمی commit‌شده** را می‌بینی (`field1 = 1`)، نه `2`. Dirty read رخ نمی‌دهد. این رفتار عمدی PostgreSQL است.
 
-##### ۲) Read Committed
+##### ۲) Read Committed (پیش‌فرض)
 
-پیش‌فرض SQL Server. داده‌ای که داخل تراکنش باز عوض شده تا پایان آن تراکنش قفل است. `SELECT` / نوشتن هم‌زمان روی همان سطرها **منتظر** commit یا rollback می‌ماند. دادهٔ commit‌نشده نمی‌خوانی — ولی بین statementها هنوز Non-repeatable و Phantom ممکن است.
+هر statement فقط سطرهایی را می‌بیند که قبل از **شروع همان statement** commit شده‌اند. Dirty نمی‌بینی. بین statementهای یک تراکنش، UPDATEهای **commit‌شده** دیگران هنوز می‌توانند دید تو را عوض کنند → Non-repeatable / Phantom ممکن است.
+
+**نمایش Non-repeatable read**
 
 **Session 1:**
 
 ```sql
-BEGIN TRAN;
-UPDATE TestTable SET Field1 = 2;
-WAITFOR DELAY '00:00:10';
-ROLLBACK;
+BEGIN;  -- پیش‌فرض = READ COMMITTED
+SELECT * FROM test_table WHERE id = 1;
+SELECT pg_sleep(10);
+SELECT * FROM test_table WHERE id = 1;  -- بعد از commit سشن ۲ ممکن است فرق کند
+COMMIT;
 ```
 
-**Session 2:**
+**Session 2 (وسط sleep):**
 
 ```sql
-SELECT * FROM TestTable;  -- تا تمام شدن Session 1 بلوکه می‌شود
+UPDATE test_table SET field1 = 7 WHERE id = 1;
+-- در psql اگر تراکنش باز نکرده باشی auto-commit است
 ```
 
-نتیجهٔ Session 2 فقط بعد از پایان Session 1 می‌آید (اینجا: بعد از rollback). Dirty read رخ نمی‌دهد.
+select اول سشن ۱: `field1 = 1`. بعد از commit سشن ۲، select دوم: `field1 = 7`. Non-repeatable read.
 
-##### ۳) Repeatable Read
+**خواننده در برابر نویسنده (MVCC):** معمولاً `SELECT` سشن ۲ پشت `UPDATE` باز سشن ۱ **گیر نمی‌کند** — نسخهٔ قبلی commit‌شده را می‌خواند. بلوکه عمدتاً وقتی دو writer روی یک سطر تعارض دارند پیش می‌آید.
 
-مثل Read Committed، به‌علاوه: وقتی سطرهایی را `SELECT` کردی، **UPDATE** آن سطرها توسط دیگران تا پایان تراکنش تو منتظر می‌ماند. دو بار همان `SELECT` معمولاً **همان مقادیر سطر** را برمی‌گرداند.
+##### ۳) Repeatable Read (snapshot)
+
+PostgreSQL در شروع تراکنش یک **snapshot** می‌گیرد. همهٔ statementهای آن تراکنش همان حالت commit‌شده را می‌بینند. UPDATEهای commit‌شده دیگران وارد دید تو نمی‌شوند. INSERTهای phantom هم معمولاً **دیده نمی‌شوند**.
 
 **Session 1:**
 
 ```sql
+BEGIN;
 SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;
-ROLLBACK;
+SELECT * FROM test_table WHERE id = 1;
+SELECT pg_sleep(10);
+SELECT * FROM test_table WHERE id = 1;  -- مثل select اول
+COMMIT;
 ```
 
-**Session 2 (وسط انتظار Session 1):**
+**Session 2 (وسط sleep):**
 
 ```sql
-UPDATE TestTable SET Field1 = 7;  -- منتظر Session 1 می‌ماند
+UPDATE test_table SET field1 = 7 WHERE id = 1;
 ```
 
-هر دو select در Session 1 یکی هستند. اگر سطح را **Read Committed** کنی، UPDATE Session 2 می‌تواند بین دو select commit شود و select دوم مقادیر متفاوت بدهد (Non-repeatable read).
+هر دو select در سشن ۱ هنوز `field1` قدیمی را نشان می‌دهند. commit سشن ۲ به snapshot سشن ۱ نشت نمی‌کند.
 
-**نکته مهم (SQL Server):** زیر Repeatable Read هنوز **INSERT** روی همان جدول ممکن است موفق شود. select دوم ممکن است سطر اضافه ببیند → **Phantom read** هنوز ممکن است. برای بستن آن از **Serializable** (یا Snapshot) استفاده کن.
+اگر سشن ۱ بعداً همان سطری را `UPDATE` کند که سشن ۲ عوض کرده، ممکن است خطا بگیری: `could not serialize access due to concurrent update`.
 
-##### ۴) Serializable
+##### ۴) Serializable (SSI)
 
-مثل Repeatable Read، با تضمین اضافه: تا پایان تراکنش تو، sessionهای دیگر نمی‌توانند سطری INSERT کنند که نتیجهٔ تو را عوض کند. جلوی Phantom گرفته می‌شود (ممکن است قفل‌ها بیشتر طول بکشند).
-
-**Session 1:**
+قوی‌ترین سطح در PostgreSQL. مثل snapshot در Repeatable Read، به‌علاوه **تشخیص شکست سریال‌سازی**. اگر الگوی خطرناک هم‌زمانی دیده شود، یک تراکنش abort می‌شود و باید retry کند.
 
 ```sql
+BEGIN;
 SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;
-ROLLBACK;
+-- خواندن/نوشتن تو
+COMMIT;
 ```
 
-**Session 2:**
+در تعارض ممکن است ببینی:
 
-```sql
-INSERT INTO TestTable (Field1, Field2, Field3)
-VALUES (100, 100, 100);  -- تا پایان Session 1 منتظر می‌ماند
+```text
+ERROR: could not serialize access due to read/write dependencies among transactions
 ```
 
-هر دو select در Session 1 یکی می‌مانند؛ insert منتظر می‌ماند.
+الگوی اپلیکیشن: خطا را بگیر → کل تراکنش را دوباره اجرا کن.
 
-##### ۵) Snapshot
+##### آزمایش Phantom read (PostgreSQL)
 
-هدف دیده‌شدن مثل Serializable است (نتیجه پایدار)، ولی writerها به همان شکل قفل نمی‌شوند. UPDATE/INSERT هم‌زمان به‌صورت **row version** مدیریت می‌شود (در SQL Server معمولاً در `tempdb`). تراکنش Snapshot نسخهٔ شروع تراکنش را می‌خواند.
-
-یک‌بار برای دیتابیس فعال کن:
-
-```sql
-ALTER DATABASE IsolationLevelTest
-SET ALLOW_SNAPSHOT_ISOLATION ON;
-```
-
-**Session 1:**
-
-```sql
-SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;
-ROLLBACK;
-```
-
-**Session 2:**
-
-```sql
-INSERT INTO TestTable (Field1, Field2, Field3)
-VALUES (200, 200, 200);  -- منتظر Session 1 نمی‌ماند
-```
-
-Session 2 فوراً جلو می‌رود. هر دو select در Session 1 همچنان یکی هستند — snapshot می‌خوانند، نه insert جدید را.
-
-##### Phantom read — آزمایش PostgreSQL
-
-**Phantom read** وقتی رخ می‌دهد که یک تراکنش **همان کوئری را دو بار** اجرا کند و بار دوم **سطرهای جدیدی** (یا سطرهایی که غیب شده‌اند) مطابق `WHERE` ببیند — چون تراکنش دیگری در این فاصله سطرهای مطابق را **INSERT** یا **DELETE** کرده و commit کرده است.
-
-**آزمایش (PostgreSQL) — دو session**
-
-از جدول `products` آزمایش Atomicity استفاده کن (یا دوباره بساز). دو session جدا در `psql` به دیتابیس `app` باز کن.
+**Phantom read** وقتی است که تراکنش **همان کوئری را دو بار** اجرا کند و بار دوم **سطرهای جدید** مطابق `WHERE` ببیند — چون تراکنش دیگری INSERT مطابق را commit کرده است.
 
 **آماده‌سازی (یک‌بار):**
 
 ```sql
 \c app
-TRUNCATE products RESTART IDENTITY;
+DROP TABLE IF EXISTS products;
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,
+  name TEXT,
+  price FLOAT,
+  inventory INTEGER
+);
 INSERT INTO products (name, price, inventory)
 VALUES ('Phone', 999.99, 10);
 ```
 
-**Session A — شروع تراکنش و شمارش سطرهای مطابق:**
+**نمایش phantom زیر Read Committed**
+
+**Session A:**
 
 ```sql
 BEGIN;
@@ -437,98 +416,73 @@ SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
 
 SELECT COUNT(*) FROM products WHERE price > 500;
 -- 1
+SELECT pg_sleep(10);
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- 2  ← phantom
+COMMIT;
 ```
 
-**Session B — درج یک سطر مطابق و commit:**
+**Session B (وسط sleep):**
 
 ```sql
 INSERT INTO products (name, price, inventory)
 VALUES ('Laptop', 1299.00, 5);
-COMMIT;  -- اگر داخل تراکنش بودی؛ وگرنه INSERT خودش auto-commit است
-```
-
-**Session A — همان کوئری دوباره (هنوز داخل تراکنش باز):**
-
-```sql
-SELECT COUNT(*) FROM products WHERE price > 500;
--- 2  ← phantom: سطر جدید در نتیجه ظاهر شد
-COMMIT;
 ```
 
 **چه اتفاقی افتاد؟**
 
-1. Session A سطرهای با `price > 500` را شمرد → `1` (Phone).
-2. Session B لپ‌تاپ (`1299`) را insert کرد و commit کرد.
-3. Session A همان شرط را دوباره اجرا کرد → `2`.
-4. سطر اضافه همان **phantom** است: در نتیجهٔ اول این تراکنش نبود.
+1. Session A شمارش `price > 500` → `1` (Phone).
+2. Session B لپ‌تاپ (`1299`) را insert و commit کرد.
+3. شمارش دوم Session A → `2`.
+4. سطر اضافه همان **phantom** است.
 
-**با Isolation قوی‌تر**
+**بستن phantom با Repeatable Read**
 
-همان مراحل را تکرار کن، ولی در Session A:
+همان اسکریپت در Session A، ولی:
 
 ```sql
 BEGIN;
 SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
--- یا: SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+SELECT COUNT(*) FROM products WHERE price > 500;
+SELECT pg_sleep(10);
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- هنوز 1
+COMMIT;
 ```
 
-در PostgreSQL، Repeatable Read از snapshot استفاده می‌کند — معمولاً `COUNT(*)` دوم تا قبل از commit همان `1` می‌ماند. Snapshot / Serializable جلوی این phantom را می‌گیرند؛ Read Committed اجازه می‌دهد.
-
-> **نکته موتور:** در SQL Server، Repeatable Read هنوز می‌تواند phantom بدهد (INSERT). در PostgreSQL، Repeatable Read مبتنی بر snapshot است و معمولاً phantom نمی‌دهد. همیشه docs همان DBMS را چک کن.
-
-**پیاده‌سازی Isolation در پایگاه‌داده:**
-
-- هر DBMS سطوح Isolation را متفاوت پیاده می‌کند
-- **Pessimistic** — قفل سطح سطر / جدول / صفحه برای جلوگیری از Lost updates
-- **Optimistic** — بدون قفل؛ تغییر را ردیابی می‌کند و در تعارض تراکنش را fail می‌کند
-- Repeatable Read معمولاً سطرهای خوانده‌شده را «قفل» می‌کند؛ روی خواندن زیاد گران است. PostgreSQL معمولاً RR را مثل Snapshot پیاده می‌کند — به همین دلیل معمولاً در Postgres زیر Repeatable Read، Phantom read نمی‌گیری
+INSERT سشن B می‌تواند commit شود؛ snapshot سشن A تا قبل از commit خودش آن را نمی‌بیند.
 
 ##### Serializable در برابر Phantom Read
 
-**Phantom read** = تراکنش تو همان `SELECT` را دو بار اجرا می‌کند؛ بین دو اجرا تراکنش دیگری سطرهای مطابق شرط را **INSERT** (یا DELETE) می‌کند و مجموعهٔ نتیجه عوض می‌شود.
+**Phantom read** = دو بار همان `SELECT`؛ بین دو اجرا INSERT/DELETE مطابق شرط؛ مجموعهٔ نتیجه عوض می‌شود.
 
-**Serializable** سطحی است که برای **جلوگیری از همین کلاس ناهنجاری** طراحی شده (همراه با Dirty و Non-repeatable).
+| | Read Committed | Repeatable Read (PostgreSQL) | Serializable |
+| - | -------------- | ---------------------------- | ------------ |
+| UPDATEهای commit‌شده دیگران وسط تراکنش دیده می‌شود؟ | بله (per statement) | خیر (snapshot) | خیر (snapshot + SSI) |
+| Phantom از INSERT؟ | 🔴 ممکن | 🟢 معمولاً بسته | 🟢 بسته |
+| ممکن است تراکنش abort شود؟ | برای این مورد نادر | روی نوشتن متعارض همان سطر | روی تعارض تشخیص‌داده‌شده SSI |
 
-| | Repeatable Read (SQL Server) | Serializable |
-| - | ---------------------------- | ------------ |
-| جلوی UPDATE سطرهایی که خواندی را می‌گیرد؟ | بله | بله |
-| جلوی INSERTهایی که نتیجه را عوض می‌کنند؟ | **خیر** → phantom ممکن است | **بله** → phantom بسته می‌شود |
-| هزینه معمول | کمتر | بیشتر (قفل / range lock بیشتر) |
+**PostgreSQL چطور در Repeatable Read phantom را می‌بندد؟**
 
-**Serializable چطور phantom را می‌بندد؟**
+- Snapshot در `BEGIN` / اولین کوئری تراکنش RR ثابت می‌شود.
+- INSERTهایی که بعد از آن snapshot commit شوند برای تو نامرئی‌اند.
+- معمولاً به range lock به‌سبک بعضی موتورهای قفل‌محور نیاز نیست.
 
-- نه فقط سطرهای موجود، بلکه **محدودهٔ شرط** (range کلیدهایی که کوئری پوشش می‌دهد) را هم در نظر می‌گیرد.
-- تا وقتی تراکنش تو باز است، session دیگر نمی‌تواند داخل آن range سطری INSERT کند.
-- بنابراین `SELECT` دوم نمی‌تواند ناگهان سطر مطابق جدید ببیند.
+**کی Serializable؟**
 
-**تفاوت سریع (جدول `TestTable` در SQL Server)**
+- وقتی قواعد کسب‌وکار نیاز به اجرای واقعاً سریال دارند (مثلاً دو تراکنش هر کدام یک مجموعه را می‌خوانند و بر اساس آن می‌نویسند).
+- انتظار `could not serialize access` گاه‌به‌گاه → retry.
 
-1. زیر **Repeatable Read**: Session A دو بار select با تأخیر؛ Session B **INSERT** می‌زند → معمولاً موفق → select دوم A ممکن است سطر جدید ببیند (**phantom**).
-2. زیر **Serializable**: همان اسکریپت → **INSERT** در Session B **منتظر** می‌ماند → هر دو select در A یکی می‌مانند → **بدون phantom**.
+**معنای Snapshot در برابر Serializable (PostgreSQL)**
 
-```sql
--- Session A
-SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;  -- همان سطرهای select اول
-ROLLBACK;
-```
+- **Repeatable Read** ≈ snapshot isolation (دید پایدار؛ بدون Dirty / Non-repeatable / phantom معمول).
+- **Serializable** = snapshot + بررسی وابستگی؛ برای الگوهای نوشتن پیچیده امن‌تر، احتمال retry بیشتر.
 
-```sql
--- Session B (وسط تأخیر)
-INSERT INTO TestTable (Field1, Field2, Field3)
-VALUES (100, 100, 100);  -- تا پایان Session A بلوکه است
-```
+**پیاده‌سازی Isolation در پایگاه‌داده:**
 
-**Snapshot در برابر Serializable (هدف یکی، مکانیزم فرق)**
-
-- هر دو می‌خواهند نتیجه بدون phantom باشد.
-- **Serializable** اغلب با **قفل** کار می‌کند (writer ممکن است منتظر بماند).
-- **Snapshot** با **row version** کار می‌کند (writer معمولاً جلو می‌رود؛ reader نسخهٔ قدیمی را نگه می‌دارد).
-
-**نکته PostgreSQL:** Repeatable Read از قبل snapshot-based است؛ معمولاً بدون Serializable هم phantom نمی‌بینی — ولی Serializable هنوز برای تعارض‌های write/write تشخیص قوی‌تری می‌دهد.
+- Isolation در PostgreSQL روی **MVCC** + snapshot (+ SSI برای Serializable) بنا شده
+- موتورهای **Pessimistic** بیشتر روی قفل تکیه می‌کنند؛ خواننده‌های PostgreSQL بیشتر با نسخه کار می‌کنند
+- مدیریت **Optimistic** وقتی writerهای RR/Serializable برخورد می‌کنند دیده می‌شود — fail و retry
 
 #### Durability (دوام)
 

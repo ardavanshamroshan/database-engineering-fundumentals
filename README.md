@@ -221,9 +221,11 @@ A transaction must bring the database from one valid state to another.
 
 #### Isolation
 
-**Isolation Level** controls how concurrent transactions lock and see each other’s data.
+**Isolation Level** controls how concurrent transactions see each other’s data.
 
-Simple case: one transaction runs an `UPDATE`, another runs a `SELECT` on the same rows. The isolation level decides whether the reader waits, sees old data, sees uncommitted data, or sees a snapshot.
+PostgreSQL uses **MVCC** (Multi-Version Concurrency Control): readers usually do not block writers, and writers usually do not block readers. Isolation still decides *which version* of a row you see.
+
+Simple case: one transaction runs an `UPDATE`, another runs a `SELECT` on the same rows. The isolation level decides whether the reader sees the old row version, waits, or sees a snapshot fixed at transaction start.
 
 Question: can my in-flight transaction see changes made by other transactions?
 
@@ -246,6 +248,8 @@ If transactions are not isolated, results can be wrong.
 
 **Dirty read** — Transaction A changes data but has not committed yet. Transaction B’s `SELECT` reads those pending changes. If A later rolls back, B already used invalid data.
 
+**Non-repeatable read** — You read a row, another transaction commits an update/delete to that row, your next `SELECT` sees a different value (or no row).
+
 **Phantom read** — While Transaction A runs `SELECT`s, another transaction inserts (or deletes) rows that match A’s predicate. A’s later `SELECT` sees a different set of rows — new “ghost” rows appear (or disappear).
 
 | Anomaly | What changed |
@@ -254,182 +258,157 @@ If transactions are not isolated, results can be wrong.
 | Non-repeatable read | An **existing row** you already read was **updated** (or deleted) |
 | Phantom read | The **set of rows** matching your query grew/shrank |
 
-##### Isolation levels (overview)
+##### Isolation levels in PostgreSQL (overview)
 
-| Level | Typical behavior | Dirty | Non-repeatable | Phantom |
-| ----- | ---------------- | ----- | -------------- | ------- |
-| **Read Uncommitted** | Almost no read locks; can see uncommitted data | 🔴 | 🔴 | 🔴 |
-| **Read Committed** | Default in SQL Server / PostgreSQL; only committed data | 🟢 | 🔴 | 🔴 |
-| **Repeatable Read** | Rows you read stay stable for the transaction; writers wait | 🟢 | 🟢 | 🔴 (SQL Server) / often 🟢 (PostgreSQL snapshot) |
-| **Serializable** | Like Repeatable Read + blocks inserts that would create phantoms | 🟢 | 🟢 | 🟢 |
-| **Snapshot** | Consistent snapshot without blocking writers the same way; versions in tempdb (SQL Server) | 🟢 | 🟢 | 🟢 |
+| Level | PostgreSQL behavior | Dirty | Non-repeatable | Phantom |
+| ----- | ------------------- | ----- | -------------- | ------- |
+| **Read Uncommitted** | Accepted, but behaves like **Read Committed** (no real dirty reads) | 🟢 | 🔴 | 🔴 |
+| **Read Committed** | **Default.** Each statement sees only data committed before that statement started | 🟢 | 🔴 | 🔴 |
+| **Repeatable Read** | Snapshot of the DB as of transaction start; stable reads; phantoms normally blocked | 🟢 | 🟢 | 🟢 |
+| **Serializable** | Snapshot + conflict detection (SSI); may abort a transaction with a serialization failure | 🟢 | 🟢 | 🟢 |
 
-##### Setup for SQL Server labs
+> PostgreSQL has **no separate `SNAPSHOT` isolation level name**. **Repeatable Read** already gives snapshot isolation. **Serializable** is stronger (Serializable Snapshot Isolation).
 
-Examples below follow the classic two-query-window pattern (SQL Server). Create this once:
+##### Setup for PostgreSQL labs
+
+Open **two** `psql` sessions connected to `app` (reuse the Atomicity lab DB, or create it). Run setup once:
 
 ```sql
-CREATE DATABASE IsolationLevelTest;
-GO
-USE IsolationLevelTest;
-GO
+CREATE DATABASE app;          -- skip if it already exists
+\c app
 
-CREATE TABLE TestTable
-(
-  ID INT IDENTITY,
-  Field1 INT NULL,
-  Field2 INT NULL,
-  Field3 INT NULL
+DROP TABLE IF EXISTS test_table;
+CREATE TABLE test_table (
+  id SERIAL PRIMARY KEY,
+  field1 INT,
+  field2 INT,
+  field3 INT
 );
-GO
 
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
-INSERT INTO TestTable (Field1, Field2, Field3) VALUES (1, 2, 3);
+INSERT INTO test_table (field1, field2, field3) VALUES
+  (1, 2, 3),
+  (1, 2, 3),
+  (1, 2, 3),
+  (1, 2, 3);
 ```
 
-##### 1) Read Uncommitted
+Use `pg_sleep(10)` so you have time to switch sessions (instead of a manual pause only).
 
-Lowest level: little/no locking for readers. Another session can read (or even change) data that is still inside an open transaction. `SELECT` may return values that are not final yet → **dirty read**.
+##### 1) Read Uncommitted (same as Read Committed in PostgreSQL)
+
+In the SQL standard this is the weakest level and can allow dirty reads. **In PostgreSQL, `READ UNCOMMITTED` is treated like `READ COMMITTED`** — you still cannot see uncommitted data from other sessions.
 
 **Session 1:**
 
 ```sql
-BEGIN TRAN;
-UPDATE TestTable SET Field1 = 2;
-WAITFOR DELAY '00:00:10';
+BEGIN;
+UPDATE test_table SET field1 = 2;
+SELECT pg_sleep(10);
 ROLLBACK;
 ```
 
-**Session 2 (run quickly while Session 1 is waiting):**
+**Session 2 (run while Session 1 is sleeping):**
 
 ```sql
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-SELECT * FROM TestTable;
+SELECT * FROM test_table;
 ```
 
-First run of Session 2 often shows `Field1 = 2` even though Session 1 later rolls back. Wait 10 seconds and select again — values return to the previous state. That first select was a dirty read.
+You still see the **old** committed values (`field1 = 1`), not `2`. No dirty read. That is intentional PostgreSQL behavior.
 
-##### 2) Read Committed
+##### 2) Read Committed (default)
 
-Default in SQL Server. Data changed inside an open transaction is locked until that transaction ends. A concurrent `SELECT` / write on those rows **waits** for commit or rollback. You do not read uncommitted data — but you can still get non-repeatable and phantom reads across statements.
+Each statement sees only rows committed before **that statement** began. You never see dirty data. Across statements in the same transaction, another session’s **committed** updates can still change what you see → non-repeatable / phantom possible.
+
+**Demonstrate non-repeatable read**
 
 **Session 1:**
 
 ```sql
-BEGIN TRAN;
-UPDATE TestTable SET Field1 = 2;
-WAITFOR DELAY '00:00:10';
-ROLLBACK;
+BEGIN;  -- default = READ COMMITTED
+SELECT * FROM test_table WHERE id = 1;
+SELECT pg_sleep(10);
+SELECT * FROM test_table WHERE id = 1;  -- may differ after Session 2 commits
+COMMIT;
 ```
 
-**Session 2:**
+**Session 2 (during the sleep):**
 
 ```sql
-SELECT * FROM TestTable;  -- blocks until Session 1 finishes
+UPDATE test_table SET field1 = 7 WHERE id = 1;
+-- auto-commit in psql unless you started a transaction
 ```
 
-Session 2’s result appears only after Session 1 ends (here: after rollback). No dirty read.
+Session 1’s first select shows `field1 = 1`. After Session 2 commits, the second select shows `field1 = 7`. Non-repeatable read.
 
-##### 3) Repeatable Read
+**Writers vs readers (MVCC):** a `SELECT` in Session 2 usually does **not** block waiting for Session 1’s open `UPDATE` — it reads the previous committed version. Blocking happens mainly when two writers conflict on the same row.
 
-Like Read Committed, plus: once you `SELECT` rows, other transactions’ **updates** to those rows wait until your transaction finishes. Running the same `SELECT` twice usually returns the **same row values**.
+##### 3) Repeatable Read (snapshot)
+
+PostgreSQL takes a **snapshot** at transaction start. All statements in that transaction see the same committed state (as of that snapshot). Committed updates from others do not change your view. Phantoms from inserts are normally **not** visible either.
 
 **Session 1:**
 
 ```sql
+BEGIN;
 SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;
-ROLLBACK;
+SELECT * FROM test_table WHERE id = 1;
+SELECT pg_sleep(10);
+SELECT * FROM test_table WHERE id = 1;  -- same as first select
+COMMIT;
 ```
 
-**Session 2 (while Session 1 waits):**
+**Session 2 (during the sleep):**
 
 ```sql
-UPDATE TestTable SET Field1 = 7;  -- waits for Session 1
+UPDATE test_table SET field1 = 7 WHERE id = 1;
 ```
 
-Both selects in Session 1 match. Under **Read Committed**, Session 2’s update can commit between the two selects and the second select can show different values (non-repeatable read).
+Both selects in Session 1 still show the old `field1`. Session 2’s commit does not leak into Session 1’s snapshot.
 
-**Important (SQL Server):** under Repeatable Read, an **INSERT** into the same table can still succeed. The second `SELECT` may show extra rows → **phantom read** is still possible. Use **Serializable** (or Snapshot) to block that.
+If Session 1 later tries to `UPDATE` the same row that Session 2 already changed, PostgreSQL may raise: `could not serialize access due to concurrent update`.
 
-##### 4) Serializable
+##### 4) Serializable (SSI)
 
-Like Repeatable Read, with an extra guarantee: other sessions cannot **insert** rows that would change your result set until your transaction ends. Phantoms are prevented (readers/writers may block longer).
-
-**Session 1:**
+Strongest level in PostgreSQL. Like Repeatable Read’s snapshot, plus **serialization failure detection**. If the system detects a dangerous concurrent pattern, one transaction is aborted and must retry.
 
 ```sql
+BEGIN;
 SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;
-ROLLBACK;
+-- your reads/writes
+COMMIT;
 ```
 
-**Session 2:**
+On conflict you may see:
 
-```sql
-INSERT INTO TestTable (Field1, Field2, Field3)
-VALUES (100, 100, 100);  -- waits until Session 1 ends
+```text
+ERROR: could not serialize access due to read/write dependencies among transactions
 ```
 
-Both selects in Session 1 stay identical; the insert waits.
+Application pattern: catch the error → retry the whole transaction.
 
-##### 5) Snapshot
+##### Phantom read lab (PostgreSQL)
 
-Same *visibility* goal as Serializable (stable result set), but writers are not locked the same way. Concurrent updates/inserts go into **row versions** (SQL Server stores them in `tempdb`). Your snapshot transaction keeps reading the version as of transaction start.
-
-Enable once per database:
-
-```sql
-ALTER DATABASE IsolationLevelTest
-SET ALLOW_SNAPSHOT_ISOLATION ON;
-```
-
-**Session 1:**
-
-```sql
-SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;
-ROLLBACK;
-```
-
-**Session 2:**
-
-```sql
-INSERT INTO TestTable (Field1, Field2, Field3)
-VALUES (200, 200, 200);  -- does not wait on Session 1
-```
-
-Session 2 proceeds immediately. Both selects in Session 1 still match — they read the snapshot, not the new insert.
-
-##### Phantom read — PostgreSQL lab
-
-A **phantom read** happens when a transaction runs the **same query twice** and the second run sees **new rows** (or missing rows) that match the `WHERE` predicate — because another transaction **inserted** or **deleted** matching rows and committed in between.
-
-**Lab (PostgreSQL) — two sessions**
-
-Use the `products` table from the Atomicity lab (or recreate it). Open **two** `psql` sessions to `app`.
+A **phantom read** happens when a transaction runs the **same query twice** and the second run sees **new rows** that match the `WHERE` — because another transaction inserted matching rows and committed in between.
 
 **Setup (once):**
 
 ```sql
 \c app
-TRUNCATE products RESTART IDENTITY;
+DROP TABLE IF EXISTS products;
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,
+  name TEXT,
+  price FLOAT,
+  inventory INTEGER
+);
 INSERT INTO products (name, price, inventory)
 VALUES ('Phone', 999.99, 10);
 ```
 
-**Session A — start transaction, count matching rows:**
+**Show phantom under Read Committed**
+
+**Session A:**
 
 ```sql
 BEGIN;
@@ -437,98 +416,73 @@ SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
 
 SELECT COUNT(*) FROM products WHERE price > 500;
 -- 1
+SELECT pg_sleep(10);
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- 2  ← phantom
+COMMIT;
 ```
 
-**Session B — insert a matching row and commit:**
+**Session B (during the sleep):**
 
 ```sql
 INSERT INTO products (name, price, inventory)
 VALUES ('Laptop', 1299.00, 5);
-COMMIT;  -- if you were in a transaction; otherwise the INSERT auto-commits
-```
-
-**Session A — same query again (still inside the open transaction):**
-
-```sql
-SELECT COUNT(*) FROM products WHERE price > 500;
--- 2  ← phantom: a new row appeared in the result set
-COMMIT;
 ```
 
 **What happened**
 
 1. Session A counted rows with `price > 500` → `1` (Phone).
 2. Session B inserted Laptop (`1299`) and committed.
-3. Session A ran the same predicate again → `2`.
-4. The extra row is the **phantom**: it was not in the first result set of this transaction.
+3. Session A’s second count → `2`.
+4. The extra row is the **phantom**.
 
-**Under stronger isolation**
+**Block the phantom with Repeatable Read**
 
-Repeat the same steps, but in Session A use:
+Same script in Session A, but:
 
 ```sql
 BEGIN;
 SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
--- or: SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+SELECT COUNT(*) FROM products WHERE price > 500;
+SELECT pg_sleep(10);
+SELECT COUNT(*) FROM products WHERE price > 500;
+-- still 1
+COMMIT;
 ```
 
-In PostgreSQL, Repeatable Read uses a snapshot — the second `COUNT(*)` usually stays `1` until you commit. Snapshot / Serializable block this phantom; Read Committed allows it.
-
-> **Engine note:** SQL Server Repeatable Read can still allow phantoms (inserts). PostgreSQL Repeatable Read is snapshot-based and typically does **not**. Always check your DBMS docs.
-
-**Database implementation of isolation:**
-
-- Each DBMS implements isolation levels differently
-- **Pessimistic** — row / table / page locks to avoid lost updates
-- **Optimistic** — no locks; track changes and fail the transaction if conflict
-- Repeatable Read often “locks” rows it read; expensive on large reads. PostgreSQL implements RR as snapshot — that is why you typically do not get phantom reads with Postgres under Repeatable Read
+Session B’s insert can commit; Session A’s snapshot never sees it until A commits.
 
 ##### Serializable vs Phantom Read
 
-**Phantom read** = your transaction runs the same `SELECT` twice; between the two runs another transaction **inserts** (or deletes) rows that match your predicate, so the result set changes.
+**Phantom read** = same `SELECT` twice; between runs another transaction inserts/deletes matching rows; result set changes.
 
-**Serializable** is the isolation level that is designed to **prevent that class of anomaly** (along with dirty and non-repeatable reads).
+| | Read Committed | Repeatable Read (PostgreSQL) | Serializable |
+| - | -------------- | ---------------------------- | ------------ |
+| Sees other txs’ committed updates mid-transaction? | Yes (per statement) | No (snapshot) | No (snapshot + SSI) |
+| Phantoms from INSERT? | 🔴 possible | 🟢 normally blocked | 🟢 blocked |
+| May abort your transaction? | Rare for this case | On conflicting write to same row | On detected serialization conflict |
 
-| | Repeatable Read (SQL Server) | Serializable |
-| - | ---------------------------- | ------------ |
-| Stops updates to rows you already read? | Yes | Yes |
-| Stops inserts that would change your result set? | **No** → phantoms possible | **Yes** → phantoms blocked |
-| Typical cost | Lower | Higher (more blocking / range locks) |
+**How PostgreSQL stops phantoms at Repeatable Read**
 
-**How Serializable stops phantoms**
+- Snapshot is fixed at `BEGIN` / first query of the RR transaction.
+- Inserts committed by others after that snapshot are invisible to you.
+- You do not need range locks the way some lock-based engines do.
 
-- It treats the predicate (the “range” of keys your query covers), not only the rows that already exist.
-- While your transaction is open, another session cannot insert a row into that range until you commit or roll back.
-- So the second `SELECT` cannot suddenly see a new matching row.
+**When to use Serializable**
 
-**Quick contrast (SQL Server `TestTable`)**
+- Use when business rules need true serial execution (e.g. two transactions that each read a set and then write based on that set).
+- Expect occasional `could not serialize access` → retry.
 
-1. Under **Repeatable Read**: Session A selects twice with a delay; Session B **INSERT**s → often succeeds → Session A’s second select may show the new row (**phantom**).
-2. Under **Serializable**: same script → Session B’s **INSERT** **waits** → both of Session A’s selects stay identical → **no phantom**.
+**Snapshot semantics vs Serializable (PostgreSQL)**
 
-```sql
--- Session A
-SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
-BEGIN TRAN;
-SELECT * FROM TestTable;
-WAITFOR DELAY '00:00:10';
-SELECT * FROM TestTable;  -- same rows as first select
-ROLLBACK;
-```
+- **Repeatable Read** ≈ snapshot isolation (stable view, no dirty / non-repeatable / typical phantoms).
+- **Serializable** = snapshot + dependency checks; safer for complex concurrent write patterns, higher chance of retry.
 
-```sql
--- Session B (run during the delay)
-INSERT INTO TestTable (Field1, Field2, Field3)
-VALUES (100, 100, 100);  -- blocked until Session A ends
-```
+**Database implementation of isolation:**
 
-**Snapshot vs Serializable (same goal, different mechanism)**
-
-- Both aim for a result set free of phantoms.
-- **Serializable** often uses **locks** (writers may wait).
-- **Snapshot** uses **row versions** (writers usually proceed; readers keep the old snapshot).
-
-**PostgreSQL note:** Repeatable Read is already snapshot-based, so phantoms are typically avoided there without needing Serializable — but Serializable still gives stronger conflict detection for write/write races.
+- PostgreSQL isolation is built on **MVCC** + snapshots (+ SSI for Serializable)
+- **Pessimistic** engines lean on locks; PostgreSQL readers mostly use versions instead
+- **Optimistic** conflict handling appears when RR/Serializable writers collide — fail and retry
 
 #### Durability
 
