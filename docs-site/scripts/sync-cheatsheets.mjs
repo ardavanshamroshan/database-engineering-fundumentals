@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -35,7 +35,3 @@ ${cleaned}`
   writeFileSync(to, out)
   console.log(`synced ${item.src} → ${item.dest}`)
 }
-
-// Keep a copy listing for reference (optional raw mirror)
-mkdirSync(join(site, 'public'), { recursive: true })
-copyFileSync(join(root, 'README.md'), join(site, 'public', 'README.en.md'))
