@@ -8,6 +8,7 @@ export default defineConfig({
   description:
     'Fundamentals study path and practical cheatsheets for SQL and NoSQL databases.',
   base,
+  outDir: '../docs',
   cleanUrls: true,
   lastUpdated: true,
   ignoreDeadLinks: true,
