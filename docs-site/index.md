@@ -4,7 +4,9 @@ title: Home
 
 # Database Engineering
 
-<p class="lead">SQL &amp; NoSQL cheatsheets and fundamentals — compact reference.</p>
+<p class="lead">
+  Practical cheatsheets for SQL and NoSQL — plus the fundamentals study path.
+</p>
 
 ## Fundamentals
 
@@ -28,7 +30,7 @@ title: Home
     <a href="./sql/mysql">
       <span class="db-logo db-logo--mysql" role="img" aria-label="MySQL"></span>
       <strong>MySQL</strong>
-      <em>InnoDB · ops</em>
+      <em>InnoDB</em>
     </a>
   </li>
   <li>
@@ -47,7 +49,7 @@ title: Home
     <a href="./nosql/redis">
       <span class="db-logo db-logo--redis" role="img" aria-label="Redis"></span>
       <strong>Redis</strong>
-      <em>cache · streams</em>
+      <em>cache</em>
     </a>
   </li>
   <li>
@@ -61,18 +63,18 @@ title: Home
     <a href="./nosql/cassandra">
       <span class="db-logo db-logo--cassandra" role="img" aria-label="Cassandra"></span>
       <strong>Cassandra</strong>
-      <em>CQL · cluster</em>
+      <em>CQL</em>
     </a>
   </li>
   <li>
     <a href="./nosql/scylladb">
       <span class="db-logo db-logo--scylladb" role="img" aria-label="ScyllaDB"></span>
       <strong>ScyllaDB</strong>
-      <em>CQL · shards</em>
+      <em>CQL</em>
     </a>
   </li>
 </ul>
 
-<p class="lead" style="font-size:0.8rem;margin-top:1.5rem!important">
-  Logos: <a href="https://simpleicons.org/">Simple Icons</a> (CC0) · <a href="./attribution">attribution</a>
+<p class="lead" style="font-size:0.8rem;margin-top:2rem!important">
+  <a href="./attribution">Logo attribution</a>
 </p>

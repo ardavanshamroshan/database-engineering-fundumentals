@@ -49,7 +49,7 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: `${base}images/logo-mark.svg` }],
-    ['meta', { name: 'theme-color', content: '#0b6e99' }],
+    ['meta', { name: 'theme-color', content: '#ffffff' }],
     ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
     [
       'link',
