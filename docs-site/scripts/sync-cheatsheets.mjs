@@ -59,11 +59,21 @@ const map = [
   },
 ]
 
+/** GitHub TOC (#1-foo--bar) → VitePress (#_1-foo-bar) */
+function rewriteTocAnchors(md) {
+  return md.replace(/\]\(#([0-9][^)]*)\)/g, (_, id) => {
+    const fixed = id.replace(/--+/g, '-')
+    return `](#_${fixed})`
+  })
+}
+
 for (const item of map) {
   const from = join(sheets, item.src)
   const to = join(site, item.dest)
   mkdirSync(dirname(to), { recursive: true })
-  const body = readFileSync(from, 'utf8').replace(/^#\s+.+\n+/, '')
+  const body = rewriteTocAnchors(
+    readFileSync(from, 'utf8').replace(/^#\s+.+\n+/, ''),
+  )
   const out = `---
 title: ${item.title}
 outline: deep

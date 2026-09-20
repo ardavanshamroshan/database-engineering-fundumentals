@@ -89,8 +89,9 @@ export default defineConfig({
     },
 
     footer: {
-      message: 'Ardavan ShamRoshan · logos via Simple Icons (CC0)',
-      copyright: 'Database Engineering Fundamentals',
+      message:
+        'Built by <a href="https://ardavanshamroshan.ir" target="_blank" rel="noopener">Ardavan ShamRoshan</a> · <a href="https://github.com/ardavanshamroshan" target="_blank" rel="noopener">GitHub</a> · <a href="mailto:ardavanshamroshan@yahoo.com">Email</a> · logos via Simple Icons (CC0)',
+      copyright: '© Database Engineering Fundamentals',
     },
 
     outline: {

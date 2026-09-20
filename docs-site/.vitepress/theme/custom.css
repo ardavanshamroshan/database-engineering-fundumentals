@@ -52,7 +52,8 @@
   --vp-code-lang-color: var(--faint);
 
   --vp-sidebar-bg-color: #fff;
-  --vp-nav-bg-color: rgba(255, 255, 255, 0.9);
+  --vp-nav-bg-color: rgba(255, 255, 255, 0.95);
+  --vp-nav-height: 48px;
 
   --vp-layout-max-width: 1280px;
 }
@@ -101,31 +102,48 @@
   --vp-nav-bg-color: rgba(14, 14, 14, 0.9);
 }
 
-/* Nav — thin rule, no glass drama */
+/* Nav — compact height */
 .VPNavBar {
   border-bottom: 1px solid var(--line) !important;
   box-shadow: none !important;
   backdrop-filter: none;
+  height: var(--vp-nav-height) !important;
+}
+
+.VPNavBar .wrapper {
+  height: var(--vp-nav-height) !important;
+}
+
+.VPNavBar .container {
+  height: var(--vp-nav-height) !important;
 }
 
 .VPNavBarTitle .title {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .VPNavBarTitle .logo {
-  width: 18px;
-  height: 18px;
-  margin-right: 8px;
+  width: 16px;
+  height: 16px;
+  margin-right: 7px;
+}
+
+.VPNavBarSearch .DocSearch-Button {
+  height: 32px !important;
+  margin: 0 !important;
 }
 
 .VPNavBarMenuLink,
 .VPNavBarMenuGroup .button {
-  font-size: 0.8125rem !important;
+  font-size: 0.78125rem !important;
   font-weight: 500 !important;
   color: var(--mute) !important;
   background: transparent !important;
+  line-height: var(--vp-nav-height) !important;
+  height: var(--vp-nav-height) !important;
 }
 
 .VPNavBarMenuLink:hover,
@@ -160,10 +178,16 @@
   text-underline-offset: 2px;
 }
 
-/* Sidebar — plain text stack */
 .VPSidebar {
   border-right: 1px solid var(--line);
-  padding: 12px 8px 28px !important;
+  padding: 12px 8px 12px !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.VPSidebar > .nav {
+  flex: 1;
+  padding-bottom: 12px !important;
 }
 
 .VPSidebarItem.level-0 > .item .text {
@@ -201,6 +225,80 @@
   background: transparent !important;
 }
 
+/* Sidebar author card */
+.sidebar-profile {
+  margin-top: auto;
+  padding: 12px 8px 4px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-profile__main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  text-decoration: none !important;
+  color: var(--ink) !important;
+  background: none !important;
+  padding: 4px 0;
+}
+
+.sidebar-profile__main:hover {
+  text-decoration: none !important;
+  background: none !important;
+}
+
+.sidebar-profile__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+}
+
+.sidebar-profile__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sidebar-profile__meta strong {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.sidebar-profile__meta em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--faint);
+}
+
+.sidebar-profile__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.65rem;
+  margin-top: 0.55rem;
+  padding-left: 2px;
+}
+
+.sidebar-profile__links a {
+  font-size: 0.7rem;
+  color: var(--mute) !important;
+  text-decoration: none !important;
+  background: none !important;
+  font-weight: 500;
+}
+
+.sidebar-profile__links a:hover {
+  color: var(--ink) !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+  background: none !important;
+}
+
 /* Doc — dense cheatsheet body */
 .VPDoc {
   padding-top: 24px !important;
@@ -231,21 +329,35 @@
   font-size: 1.05rem !important;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 1.75rem 0 0.5rem !important;
-  padding: 0.65rem 0 0 !important;
+  line-height: 1.35;
+  margin: 1.85rem 0 0.5rem !important;
+  padding: 0 !important;
   border: 0 !important;
-  border-top: 1px solid var(--line) !important;
 }
 
 .vp-doc h2:first-of-type {
-  border-top: 0 !important;
-  padding-top: 0 !important;
+  margin-top: 1rem !important;
 }
 
 .vp-doc h3 {
   font-size: 0.925rem !important;
   font-weight: 600;
+  line-height: 1.35;
   margin: 1.1rem 0 0.35rem !important;
+  padding: 0 !important;
+}
+
+/* Permalink # — same baseline as heading text */
+.vp-doc .header-anchor {
+  float: left;
+  margin-left: -0.87em;
+  padding-right: 0.23em;
+  font-size: 0.85em !important;
+  font-weight: 500;
+  line-height: inherit !important;
+  top: 0 !important;
+  transform: translateY(0.05em);
+  text-decoration: none !important;
 }
 
 .vp-doc p {
@@ -513,16 +625,40 @@
 }
 
 .VPFooter {
+  display: block !important;
   border-top: 1px solid var(--line) !important;
-  background: transparent !important;
+  background: var(--paper) !important;
+  padding: 1.25rem 1.5rem !important;
+}
+
+.VPFooter .container {
+  max-width: var(--vp-layout-max-width);
+  margin: 0 auto;
 }
 
 .VPFooter .message,
 .VPFooter .copyright {
-  font-size: 0.7rem !important;
+  font-size: 0.72rem !important;
   color: var(--faint) !important;
+  line-height: 1.5;
+}
+
+.VPFooter .message a {
+  color: var(--mute) !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 500;
+}
+
+.VPFooter .message a:hover {
+  color: var(--ink) !important;
 }
 
 .VPLocalNav {
   border-bottom: 1px solid var(--line) !important;
+}
+
+/* Keep content clear of compact sticky nav */
+.Layout {
+  --vp-nav-height: 48px;
 }
