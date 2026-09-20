@@ -39,27 +39,26 @@ export default defineConfig({
   lastUpdated: true,
   ignoreDeadLinks: true,
 
+  markdown: {
+    theme: {
+      light: 'github-dark',
+      dark: 'github-dark',
+    },
+    lineNumbers: false,
+  },
+
   head: [
-    ['link', { rel: 'icon', href: `${base}favicon.svg` }],
-    ['meta', { name: 'theme-color', content: '#ffffff' }],
+    ['link', { rel: 'icon', href: `${base}images/logo-mark.svg` }],
+    ['meta', { name: 'theme-color', content: '#0b6e99' }],
+    ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
     [
       'link',
-      {
-        rel: 'preconnect',
-        href: 'https://fonts.googleapis.com',
-      },
-    ],
-    [
-      'link',
-      {
-        rel: 'preconnect',
-        href: 'https://fonts.gstatic.com',
-        crossorigin: '',
-      },
+      { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
     ],
   ],
 
   themeConfig: {
+    logo: '/images/logo-mark.svg',
     siteTitle: 'Database Engineering',
     nav: [
       { text: 'Fundamentals', link: '/fundamentals/' },
@@ -84,10 +83,13 @@ export default defineConfig({
 
     search: {
       provider: 'local',
+      options: {
+        detailedView: true,
+      },
     },
 
     footer: {
-      message: 'Ardavan ShamRoshan',
+      message: 'Ardavan ShamRoshan · logos via Simple Icons (CC0)',
       copyright: 'Database Engineering Fundamentals',
     },
 

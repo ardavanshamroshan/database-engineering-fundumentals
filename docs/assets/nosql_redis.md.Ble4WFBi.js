@@ -1,0 +1,284 @@
+import{_ as n,o as e,c as p,j as s,a2 as i}from"./chunks/framework.DCFw80wP.js";const u=JSON.parse('{"title":"Redis","description":"","frontmatter":{"title":"Redis","outline":"deep"},"headers":[],"relativePath":"nosql/redis.md","filePath":"nosql/redis.md","lastUpdated":null}'),l={name:"nosql/redis.md"};function t(c,a,o,d,r,h){return e(),p("div",null,[...a[0]||(a[0]=[s("div",{class:"db-hero"},[s("span",{class:"db-logo db-logo--redis",role:"img","aria-label":"Redis logo"}),s("div",null,[s("h1",null,"Redis"),s("p",{class:"db-hero__blurb"},"cache · structures · streams")])],-1),i(`<p><strong>Author:</strong> Ardavan ShamRoshan<br><strong>Scope:</strong> Practical day-to-day reference (<code>redis-cli</code>, data types, keys, persistence, ops).<br><strong>Audience:</strong> Engineers who need Redis commands fast (cache, sessions, queues, counters).<br><strong>Notes:</strong> Examples target Redis 6+/7+. ACL &amp; some commands differ on Redis Cluster / managed Redis (ElastiCache, Memorystore, Upstash).</p><hr><h2 id="table-of-contents" tabindex="-1">Table of contents <a class="header-anchor" href="#table-of-contents" aria-label="Permalink to &quot;Table of contents&quot;">​</a></h2><ol><li><a href="#1-connect--flags">Connect &amp; flags</a></li><li><a href="#2-redis-cli-essentials">redis-cli essentials</a></li><li><a href="#3-keys--generic-commands">Keys &amp; generic commands</a></li><li><a href="#4-strings">Strings</a></li><li><a href="#5-hashes">Hashes</a></li><li><a href="#6-lists">Lists</a></li><li><a href="#7-sets">Sets</a></li><li><a href="#8-sorted-sets-zset">Sorted sets (ZSET)</a></li><li><a href="#9-streams">Streams</a></li><li><a href="#10-pubsub">Pub/Sub</a></li><li><a href="#11-expiry-ttl--memory">Expiry, TTL &amp; memory</a></li><li><a href="#12-transactions-lua--pipelines">Transactions, Lua &amp; pipelines</a></li><li><a href="#13-users-acl--security">Users, ACL &amp; security</a></li><li><a href="#14-persistence-backup--replication">Persistence, backup &amp; replication</a></li><li><a href="#15-info-slowlog--useful-ops">Info, slowlog &amp; useful ops</a></li><li><a href="#16-tools--resources">Tools &amp; resources</a></li></ol><p>Placeholders use <code>__name__</code> style. Replace them before running.</p><hr><h2 id="_1-connect-flags" tabindex="-1">1. Connect &amp; flags <a class="header-anchor" href="#_1-connect-flags" aria-label="Permalink to &quot;1. Connect &amp; flags&quot;">​</a></h2><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># Local default (6379)</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># Host / port / password / DB index</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -h</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> __host__</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -p</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> 6379</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -a</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> &#39;__password__&#39;</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -n</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> 0</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># URI</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -u</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> redis://:__password__@__host__:6379/0</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -u</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> rediss://:__password__@__host__:6380/0</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;">   # TLS</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># One-shot command</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> PING</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> SET</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> greeting</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> hello</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> GET</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> greeting</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># Read from file / stdin</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#F97583;--shiki-dark:#F97583;"> &lt;</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> script.txt</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --pipe</span><span style="--shiki-light:#F97583;--shiki-dark:#F97583;"> &lt;</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> bulk.txt</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># Scan-friendly / big output</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --scan</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --pattern</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> &#39;user:*&#39;</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --bigkeys</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --memkeys</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --hotkeys</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;">          # needs LFU maxmemory-policy</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --latency</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --latency-history</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --stat</span></span></code></pre></div><p>Inside CLI: <code>AUTH __password__</code> then <code>SELECT 0</code>.</p><p>DB indexes (<code>SELECT 0..15</code> by default) are <strong>not</strong> namespaces in Cluster — Cluster only uses DB <code>0</code>.</p><hr><h2 id="_2-redis-cli-essentials" tabindex="-1">2. redis-cli essentials <a class="header-anchor" href="#_2-redis-cli-essentials" aria-label="Permalink to &quot;2. redis-cli essentials&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Action</th><th>Command / tip</th></tr></thead><tbody><tr><td>Ping</td><td><code>PING</code> → <code>PONG</code></td></tr><tr><td>Quit</td><td><code>QUIT</code> or <code>Ctrl+D</code></td></tr><tr><td>Clear screen</td><td><code>CLEAR</code></td></tr><tr><td>Monitor all commands (debug)</td><td><code>MONITOR</code> — expensive; prod caution</td></tr><tr><td>Subscribe mode</td><td><code>SUBSCRIBE __channel__</code> — blocking</td></tr><tr><td>Raw / CSV mode</td><td><code>redis-cli --raw</code> / <code>--csv</code></td></tr><tr><td>Replica read</td><td><code>redis-cli --replica</code> (when applicable)</td></tr><tr><td>Cluster mode</td><td><code>redis-cli -c</code> (follow redirects)</td></tr></tbody></table><p>Help:</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>HELP @string</span></span>
+<span class="line"><span>HELP SET</span></span>
+<span class="line"><span>COMMAND DOCS SET</span></span>
+<span class="line"><span>COMMAND GETKEYS SET a b</span></span></code></pre></div><hr><h2 id="_3-keys-generic-commands" tabindex="-1">3. Keys &amp; generic commands <a class="header-anchor" href="#_3-keys-generic-commands" aria-label="Permalink to &quot;3. Keys &amp; generic commands&quot;">​</a></h2><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>EXISTS __key__</span></span>
+<span class="line"><span>TYPE __key__</span></span>
+<span class="line"><span>DEL __key__ [__key__ ...]</span></span>
+<span class="line"><span>UNLINK __key__                 # async delete (prefer for big keys)</span></span>
+<span class="line"><span>RENAME __old__ __new__</span></span>
+<span class="line"><span>RENAMENX __old__ __new__</span></span>
+<span class="line"><span>COPY __src__ __dest__ [DB n] [REPLACE]   # Redis 6.2+</span></span>
+<span class="line"><span>RANDOMKEY</span></span>
+<span class="line"><span>TOUCH __key__                  # update LRU without reading</span></span></code></pre></div><p>Scan (never use <code>KEYS *</code> in production):</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>SCAN 0 MATCH user:* COUNT 100</span></span>
+<span class="line"><span>KEYS user:*                    # blocking — DEV ONLY</span></span></code></pre></div><p>Dump / restore binary value:</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>DUMP __key__</span></span>
+<span class="line"><span>RESTORE __key__ 0 __payload__ REPLACE</span></span></code></pre></div><p>Move between DBs (standalone only):</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>MOVE __key__ 1</span></span>
+<span class="line"><span>SELECT 1</span></span></code></pre></div><p>Object introspection:</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>OBJECT ENCODING __key__</span></span>
+<span class="line"><span>OBJECT IDLETIME __key__</span></span>
+<span class="line"><span>OBJECT FREQ __key__            # with LFU policy</span></span>
+<span class="line"><span>OBJECT REFCOUNT __key__</span></span>
+<span class="line"><span>MEMORY USAGE __key__</span></span></code></pre></div><hr><h2 id="_4-strings" tabindex="-1">4. Strings <a class="header-anchor" href="#_4-strings" aria-label="Permalink to &quot;4. Strings&quot;">​</a></h2><p>Cache values, counters, feature flags, serialized JSON blobs.</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>SET __key__ __value__</span></span>
+<span class="line"><span>SET __key__ __value__ EX 60            # expire seconds</span></span>
+<span class="line"><span>SET __key__ __value__ PX 60000         # expire ms</span></span>
+<span class="line"><span>SET __key__ __value__ EXAT __unix__    # expire at unix seconds</span></span>
+<span class="line"><span>SET __key__ __value__ NX               # set if Not eXists</span></span>
+<span class="line"><span>SET __key__ __value__ XX               # set if eXists</span></span>
+<span class="line"><span>SET __key__ __value__ GET              # set and return old (6.2+)</span></span>
+<span class="line"><span>SET __key__ __value__ KEEPTTL</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>GET __key__</span></span>
+<span class="line"><span>MGET k1 k2 k3</span></span>
+<span class="line"><span>MSET k1 v1 k2 v2</span></span>
+<span class="line"><span>MSETNX k1 v1 k2 v2</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>GETRANGE __key__ 0 3</span></span>
+<span class="line"><span>SETRANGE __key__ 0 &#39;Hi&#39;</span></span>
+<span class="line"><span>STRLEN __key__</span></span>
+<span class="line"><span>APPEND __key__ &#39;!&#39;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>GETDEL __key__                         # 6.2+</span></span>
+<span class="line"><span>GETEX __key__ EX 30                    # get + set TTL</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>INCR __key__</span></span>
+<span class="line"><span>INCRBY __key__ 10</span></span>
+<span class="line"><span>INCRBYFLOAT __key__ 1.5</span></span>
+<span class="line"><span>DECR __key__</span></span>
+<span class="line"><span>DECRBY __key__ 3</span></span></code></pre></div><p>Bit ops (bloom-ish / flags):</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>SETBIT __key__ 7 1</span></span>
+<span class="line"><span>GETBIT __key__ 7</span></span>
+<span class="line"><span>BITCOUNT __key__</span></span>
+<span class="line"><span>BITOP AND dest k1 k2</span></span></code></pre></div><hr><h2 id="_5-hashes" tabindex="-1">5. Hashes <a class="header-anchor" href="#_5-hashes" aria-label="Permalink to &quot;5. Hashes&quot;">​</a></h2><p>Object fields without full JSON rewrite. Good for user profiles, configs.</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>HSET user:1 name Ada email ada@ex.com</span></span>
+<span class="line"><span>HSET user:1 age 36</span></span>
+<span class="line"><span>HGET user:1 name</span></span>
+<span class="line"><span>HMGET user:1 name email</span></span>
+<span class="line"><span>HGETALL user:1</span></span>
+<span class="line"><span>HKEYS user:1</span></span>
+<span class="line"><span>HVALS user:1</span></span>
+<span class="line"><span>HEXISTS user:1 email</span></span>
+<span class="line"><span>HDEL user:1 age</span></span>
+<span class="line"><span>HLEN user:1</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>HINCRBY user:1 login_count 1</span></span>
+<span class="line"><span>HINCRBYFLOAT user:1 score 0.5</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>HSETNX user:1 role admin</span></span>
+<span class="line"><span>HRANDFIELD user:1 2 WITHVALUES      # 6.2+</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>HSCAN user:1 0 MATCH e* COUNT 50</span></span></code></pre></div><hr><h2 id="_6-lists" tabindex="-1">6. Lists <a class="header-anchor" href="#_6-lists" aria-label="Permalink to &quot;6. Lists&quot;">​</a></h2><p>Queues, timelines, recent-N. Left = head, right = tail.</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>LPUSH q job1</span></span>
+<span class="line"><span>RPUSH q job2 job3</span></span>
+<span class="line"><span>LPOP q</span></span>
+<span class="line"><span>RPOP q</span></span>
+<span class="line"><span>LPOP q COUNT 3                     # 6.2+ multi pop</span></span>
+<span class="line"><span>LMOVE src dest LEFT RIGHT          # 6.2+ atomic move (replaces RPOPLPUSH)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>BLPOP q 5                          # block up to 5s</span></span>
+<span class="line"><span>BRPOP q 0                          # block forever</span></span>
+<span class="line"><span>BLMOVE src dest LEFT RIGHT 5</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>LLEN q</span></span>
+<span class="line"><span>LRANGE q 0 -1                      # all elements</span></span>
+<span class="line"><span>LRANGE q 0 9                       # first 10</span></span>
+<span class="line"><span>LINDEX q 0</span></span>
+<span class="line"><span>LSET q 0 jobX</span></span>
+<span class="line"><span>LTRIM q 0 99                       # keep newest 100 if LPUSH pattern</span></span>
+<span class="line"><span>LINSERT q BEFORE pivot value</span></span>
+<span class="line"><span>LREM q 2 value                     # remove 2 matches</span></span></code></pre></div><p>Simple reliable queue pattern: <code>LPUSH</code> + <code>BRPOP</code> / <code>BLMOVE</code> to processing list.</p><hr><h2 id="_7-sets" tabindex="-1">7. Sets <a class="header-anchor" href="#_7-sets" aria-label="Permalink to &quot;7. Sets&quot;">​</a></h2><p>Unique membership, tags, relations, random sampling.</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>SADD tags:1 redis cache nosql</span></span>
+<span class="line"><span>SREM tags:1 cache</span></span>
+<span class="line"><span>SISMEMBER tags:1 redis</span></span>
+<span class="line"><span>SMISMEMBER tags:1 redis sql        # 6.2+</span></span>
+<span class="line"><span>SMEMBERS tags:1                    # care on large sets</span></span>
+<span class="line"><span>SCARD tags:1</span></span>
+<span class="line"><span>SRANDMEMBER tags:1 3</span></span>
+<span class="line"><span>SPOP tags:1</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SINTER a b</span></span>
+<span class="line"><span>SINTERCARD a b                     # 7.0+</span></span>
+<span class="line"><span>SUNION a b</span></span>
+<span class="line"><span>SDIFF a b</span></span>
+<span class="line"><span>SINTERSTORE dest a b</span></span>
+<span class="line"><span>SUNIONSTORE dest a b</span></span>
+<span class="line"><span>SDIFFSTORE dest a b</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SSCAN tags:1 0 MATCH r* COUNT 50</span></span></code></pre></div><hr><h2 id="_8-sorted-sets-zset" tabindex="-1">8. Sorted sets (ZSET) <a class="header-anchor" href="#_8-sorted-sets-zset" aria-label="Permalink to &quot;8. Sorted sets (ZSET)&quot;">​</a></h2><p>Leaderboards, time indexes, rate-limit windows, delayed jobs (score = timestamp).</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>ZADD lb 100 alice 200 bob 150 cara</span></span>
+<span class="line"><span>ZADD lb NX 120 dave                # only if new</span></span>
+<span class="line"><span>ZADD lb XX CH INCR 5 alice         # increment existing</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ZSCORE lb alice</span></span>
+<span class="line"><span>ZINCRBY lb 10 alice</span></span>
+<span class="line"><span>ZCARD lb</span></span>
+<span class="line"><span>ZCOUNT lb 100 200</span></span>
+<span class="line"><span>ZRANK lb alice                     # low→high</span></span>
+<span class="line"><span>ZREVRANK lb alice                  # high→low</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ZRANGE lb 0 2 WITHSCORES           # by rank (Redis 6.2+ unified)</span></span>
+<span class="line"><span>ZRANGE lb 100 200 BYSCORE WITHSCORES</span></span>
+<span class="line"><span>ZRANGE lb 100 200 BYSCORE REV LIMIT 0 10</span></span>
+<span class="line"><span>ZREVRANGE lb 0 9 WITHSCORES        # legacy still common</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ZRANGEBYSCORE lb -inf +inf</span></span>
+<span class="line"><span>ZREMRANGEBYRANK lb 0 0</span></span>
+<span class="line"><span>ZREMRANGEBYSCORE lb -inf 50</span></span>
+<span class="line"><span>ZREM lb alice</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ZPOPMIN lb</span></span>
+<span class="line"><span>ZPOPMAX lb</span></span>
+<span class="line"><span>BZPOPMIN lb 5</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ZUNIONSTORE dest 2 za zb WEIGHTS 1 2</span></span>
+<span class="line"><span>ZINTERSTORE dest 2 za zb</span></span>
+<span class="line"><span>ZDIFFSTORE dest 2 za zb            # 6.2+</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>ZSCAN lb 0 MATCH a* COUNT 50</span></span></code></pre></div><hr><h2 id="_9-streams" tabindex="-1">9. Streams <a class="header-anchor" href="#_9-streams" aria-label="Permalink to &quot;9. Streams&quot;">​</a></h2><p>Append-only log; consumer groups (Kafka-lite inside Redis).</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>XADD events * user 1 action login</span></span>
+<span class="line"><span>XADD events MAXLEN ~ 10000 * user 2 action logout</span></span>
+<span class="line"><span>XADD events 1700000000000-0 user 3 action click</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>XLEN events</span></span>
+<span class="line"><span>XRANGE events - + COUNT 10</span></span>
+<span class="line"><span>XREVRANGE events + - COUNT 10</span></span>
+<span class="line"><span>XREAD COUNT 10 BLOCK 5000 STREAMS events 0-0</span></span>
+<span class="line"><span>XREAD STREAMS events $                 # only new</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># Consumer group</span></span>
+<span class="line"><span>XGROUP CREATE events g1 0 MKSTREAM</span></span>
+<span class="line"><span>XREADGROUP GROUP g1 worker1 COUNT 10 BLOCK 2000 STREAMS events &gt;</span></span>
+<span class="line"><span>XACK events g1 1700000000000-0</span></span>
+<span class="line"><span>XPENDING events g1</span></span>
+<span class="line"><span>XCLAIM events g1 worker2 60000 1700000000000-0</span></span>
+<span class="line"><span>XAUTOCLAIM events g1 worker2 60000 0-0 COUNT 10</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>XDEL events 1700000000000-0</span></span>
+<span class="line"><span>XTRIM events MAXLEN ~ 5000</span></span>
+<span class="line"><span>XINFO STREAM events</span></span>
+<span class="line"><span>XINFO GROUPS events</span></span>
+<span class="line"><span>XINFO CONSUMERS events g1</span></span></code></pre></div><p><code>&gt;</code> = never-delivered messages for this consumer. <code>$</code> = new messages only for <code>XREAD</code>.</p><hr><h2 id="_10-pub-sub" tabindex="-1">10. Pub/Sub <a class="header-anchor" href="#_10-pub-sub" aria-label="Permalink to &quot;10. Pub/Sub&quot;">​</a></h2><p>Fire-and-forget messaging (no persistence of messages).</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>SUBSCRIBE news sports</span></span>
+<span class="line"><span>PSUBSCRIBE news.*</span></span>
+<span class="line"><span>UNSUBSCRIBE news</span></span>
+<span class="line"><span>PUBLISH news &#39;hello&#39;</span></span>
+<span class="line"><span>PUBSUB CHANNELS</span></span>
+<span class="line"><span>PUBSUB NUMSUB news</span></span>
+<span class="line"><span>PUBSUB NUMPAT</span></span></code></pre></div><p>Sharded pub/sub (Cluster-friendly, Redis 7+): <code>SSUBSCRIBE</code> / <code>SPUBLISH</code>.</p><p>Note: subscribers are blocking connections; don’t reuse them for normal commands.</p><hr><h2 id="_11-expiry-ttl-memory" tabindex="-1">11. Expiry, TTL &amp; memory <a class="header-anchor" href="#_11-expiry-ttl-memory" aria-label="Permalink to &quot;11. Expiry, TTL &amp; memory&quot;">​</a></h2><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>EXPIRE __key__ 60</span></span>
+<span class="line"><span>PEXPIRE __key__ 60000</span></span>
+<span class="line"><span>EXPIREAT __key__ __unix_s__</span></span>
+<span class="line"><span>PEXPIREAT __key__ __unix_ms__</span></span>
+<span class="line"><span>EXPIRE __key__ 60 NX|XX|GT|LT      # Redis 7+ conditions</span></span>
+<span class="line"><span>TTL __key__                        # seconds; -1 no expire; -2 missing</span></span>
+<span class="line"><span>PTTL __key__</span></span>
+<span class="line"><span>PERSIST __key__                    # remove expiry</span></span></code></pre></div><p>Maxmemory &amp; eviction:</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>CONFIG GET maxmemory</span></span>
+<span class="line"><span>CONFIG GET maxmemory-policy</span></span>
+<span class="line"><span># common policies:</span></span>
+<span class="line"><span>#   noeviction | allkeys-lru | volatile-lru</span></span>
+<span class="line"><span>#   allkeys-lfu | volatile-lfu | volatile-ttl | allkeys-random ...</span></span></code></pre></div><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>MEMORY STATS</span></span>
+<span class="line"><span>MEMORY DOCTOR</span></span>
+<span class="line"><span>MEMORY PURGE</span></span>
+<span class="line"><span>INFO memory</span></span></code></pre></div><hr><h2 id="_12-transactions-lua-pipelines" tabindex="-1">12. Transactions, Lua &amp; pipelines <a class="header-anchor" href="#_12-transactions-lua-pipelines" aria-label="Permalink to &quot;12. Transactions, Lua &amp; pipelines&quot;">​</a></h2><h3 id="multi-exec-optimistic-transaction" tabindex="-1">MULTI / EXEC (optimistic transaction) <a class="header-anchor" href="#multi-exec-optimistic-transaction" aria-label="Permalink to &quot;MULTI / EXEC (optimistic transaction)&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>MULTI</span></span>
+<span class="line"><span>INCR counter</span></span>
+<span class="line"><span>SET flag 1</span></span>
+<span class="line"><span>EXEC</span></span>
+<span class="line"><span># or DISCARD</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>WATCH balance:1</span></span>
+<span class="line"><span>MULTI</span></span>
+<span class="line"><span>DECRBY balance:1 10</span></span>
+<span class="line"><span>EXEC                     # fails if watched key changed → retry</span></span>
+<span class="line"><span>UNWATCH</span></span></code></pre></div><p>Not rollback-on-error like SQL; commands queue then run sequentially.</p><h3 id="pipeline-client-side" tabindex="-1">Pipeline (client-side) <a class="header-anchor" href="#pipeline-client-side" aria-label="Permalink to &quot;Pipeline (client-side)&quot;">​</a></h3><p>Batch many commands, cut RTT. In <code>redis-cli</code>:</p><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> --pipe</span><span style="--shiki-light:#F97583;--shiki-dark:#F97583;"> &lt;</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> commands.txt</span></span></code></pre></div><h3 id="lua-scripts-atomic-server-side" tabindex="-1">Lua scripts (atomic server-side) <a class="header-anchor" href="#lua-scripts-atomic-server-side" aria-label="Permalink to &quot;Lua scripts (atomic server-side)&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>EVAL &quot;return redis.call(&#39;GET&#39;, KEYS[1])&quot; 1 mykey</span></span>
+<span class="line"><span>EVALSHA __sha__ 1 mykey</span></span>
+<span class="line"><span>SCRIPT LOAD &quot;return 1&quot;</span></span>
+<span class="line"><span>SCRIPT EXISTS __sha__</span></span>
+<span class="line"><span>SCRIPT FLUSH</span></span></code></pre></div><p>Redis Functions (7+): <code>FUNCTION LOAD</code>, <code>FCALL</code> — prefer for reusable logic.</p><h3 id="locks-simple" tabindex="-1">Locks (simple) <a class="header-anchor" href="#locks-simple" aria-label="Permalink to &quot;Locks (simple)&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>SET lock:resource token NX EX 30</span></span>
+<span class="line"><span># release safely via Lua: delete only if value == token</span></span></code></pre></div><p>Prefer Redlock / library only when you understand the tradeoffs.</p><hr><h2 id="_13-users-acl-security" tabindex="-1">13. Users, ACL &amp; security <a class="header-anchor" href="#_13-users-acl-security" aria-label="Permalink to &quot;13. Users, ACL &amp; security&quot;">​</a></h2><p>Redis 6+ ACL (replaces single global password-only model):</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>ACL LIST</span></span>
+<span class="line"><span>ACL WHOAMI</span></span>
+<span class="line"><span>ACL GETUSER default</span></span>
+<span class="line"><span>ACL SETUSER alice on &gt;secret_pass ~cached:* +@read +@write -@dangerous</span></span>
+<span class="line"><span>ACL SETUSER alice resetpass &gt;newpass</span></span>
+<span class="line"><span>ACL DELUSER alice</span></span>
+<span class="line"><span>ACL CAT</span></span>
+<span class="line"><span>ACL CAT string</span></span>
+<span class="line"><span>ACL LOG</span></span>
+<span class="line"><span>ACL SAVE</span></span>
+<span class="line"><span>ACL LOAD</span></span></code></pre></div><p>Legacy:</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>AUTH __password__</span></span>
+<span class="line"><span>CONFIG GET requirepass</span></span></code></pre></div><p>TLS: use <code>rediss://</code> and server <code>tls-port</code> / cert config.<br> Bind carefully (<code>bind 127.0.0.1</code>); never expose unprotected Redis to the internet.<br> Disable dangerous commands in prod (<code>FLUSHALL</code>, <code>KEYS</code>, <code>CONFIG</code>) via ACL rename/block.</p><hr><h2 id="_14-persistence-backup-replication" tabindex="-1">14. Persistence, backup &amp; replication <a class="header-anchor" href="#_14-persistence-backup-replication" aria-label="Permalink to &quot;14. Persistence, backup &amp; replication&quot;">​</a></h2><h3 id="rdb-snapshot" tabindex="-1">RDB (snapshot) <a class="header-anchor" href="#rdb-snapshot" aria-label="Permalink to &quot;RDB (snapshot)&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>SAVE                 # blocking</span></span>
+<span class="line"><span>BGSAVE               # background</span></span>
+<span class="line"><span>LASTSAVE</span></span></code></pre></div><h3 id="aof-append-only-log" tabindex="-1">AOF (append-only log) <a class="header-anchor" href="#aof-append-only-log" aria-label="Permalink to &quot;AOF (append-only log)&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>BGREWRITEAOF</span></span>
+<span class="line"><span>CONFIG GET appendonly</span></span>
+<span class="line"><span>CONFIG GET appendfsync     # always | everysec | no</span></span></code></pre></div><p>Typical prod: <strong>AOF everysec</strong> and/or RDB snapshots. Managed Redis often handles this for you.</p><h3 id="copy-files-cold" tabindex="-1">Copy files (cold) <a class="header-anchor" href="#copy-files-cold" aria-label="Permalink to &quot;Copy files (cold)&quot;">​</a></h3><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># Stop writes / use BGSAVE then copy dump.rdb / appendonly.aof</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">cp</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> /var/lib/redis/dump.rdb</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> backup/</span></span></code></pre></div><h3 id="replication" tabindex="-1">Replication <a class="header-anchor" href="#replication" aria-label="Permalink to &quot;Replication&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>INFO replication</span></span>
+<span class="line"><span>ROLE</span></span>
+<span class="line"><span>REPLICAOF __host__ __port__    # (SLAVEOF legacy alias)</span></span>
+<span class="line"><span>REPLICAOF NO ONE               # promote</span></span></code></pre></div><h3 id="cluster-high-level" tabindex="-1">Cluster (high level) <a class="header-anchor" href="#cluster-high-level" aria-label="Permalink to &quot;Cluster (high level)&quot;">​</a></h3><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">redis-cli</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -c</span><span style="--shiki-light:#79B8FF;--shiki-dark:#79B8FF;"> -h</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> __host__</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">CLUSTER</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> INFO</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">CLUSTER</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> NODES</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">CLUSTER</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> KEYSLOT</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> __key__</span></span>
+<span class="line"><span style="--shiki-light:#B392F0;--shiki-dark:#B392F0;">CLUSTER</span><span style="--shiki-light:#9ECBFF;--shiki-dark:#9ECBFF;"> SLOTS</span></span></code></pre></div><h3 id="flush-danger" tabindex="-1">Flush (danger) <a class="header-anchor" href="#flush-danger" aria-label="Permalink to &quot;Flush (danger)&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>FLUSHDB                  # current DB</span></span>
+<span class="line"><span>FLUSHDB ASYNC</span></span>
+<span class="line"><span>FLUSHALL                 # all DBs — catastrophic</span></span>
+<span class="line"><span>FLUSHALL ASYNC</span></span></code></pre></div><hr><h2 id="_15-info-slowlog-useful-ops" tabindex="-1">15. Info, slowlog &amp; useful ops <a class="header-anchor" href="#_15-info-slowlog-useful-ops" aria-label="Permalink to &quot;15. Info, slowlog &amp; useful ops&quot;">​</a></h2><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>INFO</span></span>
+<span class="line"><span>INFO server</span></span>
+<span class="line"><span>INFO clients</span></span>
+<span class="line"><span>INFO memory</span></span>
+<span class="line"><span>INFO stats</span></span>
+<span class="line"><span>INFO replication</span></span>
+<span class="line"><span>INFO keyspace</span></span>
+<span class="line"><span>INFO commandstats</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>DBSIZE</span></span>
+<span class="line"><span>CLIENT LIST</span></span>
+<span class="line"><span>CLIENT ID</span></span>
+<span class="line"><span>CLIENT KILL ID __id__</span></span>
+<span class="line"><span>CLIENT PAUSE 1000</span></span>
+<span class="line"><span>CLIENT UNPAUSE</span></span>
+<span class="line"><span>CLIENT NO-EVICT on         # 7+ protect connection memory</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>SLOWLOG GET 10</span></span>
+<span class="line"><span>SLOWLOG LEN</span></span>
+<span class="line"><span>SLOWLOG RESET</span></span>
+<span class="line"><span>CONFIG GET slowlog-log-slower-than</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>CONFIG GET *</span></span>
+<span class="line"><span>CONFIG SET maxmemory 2gb</span></span>
+<span class="line"><span>CONFIG REWRITE                 # persist CONFIG SET to redis.conf</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>MONITOR                        # live command stream</span></span>
+<span class="line"><span>LATENCY DOCTOR</span></span>
+<span class="line"><span>LATENCY LATEST</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>MODULE LIST</span></span>
+<span class="line"><span>COMMAND COUNT</span></span>
+<span class="line"><span>TIME</span></span>
+<span class="line"><span>LASTSAVE</span></span></code></pre></div><p>Keyspace notifications (expire events, etc.):</p><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>CONFIG SET notify-keyspace-events Ex</span></span>
+<span class="line"><span>PSUBSCRIBE __keyevent@0__:expired</span></span></code></pre></div><p>Ops reminders (short):</p><ul><li>Use <strong><code>SCAN</code></strong>, not <code>KEYS *</code>, in production.</li><li>Prefer <strong><code>UNLINK</code></strong> over <code>DEL</code> for big keys.</li><li>Set <strong>TTL</strong> on cache keys; avoid unbounded growth.</li><li>Pick <strong>maxmemory-policy</strong> deliberately (<code>allkeys-lru</code> common for cache).</li><li>Big keys hurt: check <code>--bigkeys</code>; split or use hashes/streams.</li><li>Pipelines + Lua for atomic multi-step work; don’t pretend MULTI is SQL ACID across keys under failover without care.</li><li>One connection for Pub/Sub; another for normal commands.</li><li>Cluster: hash tags <code>{user:1}:profile</code> keep related keys on same slot.</li></ul><hr><h2 id="_16-tools-resources" tabindex="-1">16. Tools &amp; resources <a class="header-anchor" href="#_16-tools-resources" aria-label="Permalink to &quot;16. Tools &amp; resources&quot;">​</a></h2><p><strong>Tools</strong></p><ul><li><code>redis-cli</code> — official CLI</li><li>Redis Insight — GUI</li><li><code>redis-benchmark</code> — load testing</li><li>Libraries: <code>redis-py</code>, <code>ioredis</code>, <code>go-redis</code>, Jedis/Lettuce</li></ul><p><strong>Docs</strong></p><ul><li><a href="https://redis.io/commands/" target="_blank" rel="noreferrer">Redis commands</a></li><li><a href="https://redis.io/docs/data-types/" target="_blank" rel="noreferrer">Data types</a></li><li><a href="https://redis.io/docs/management/security/acl/" target="_blank" rel="noreferrer">ACL</a></li><li><a href="https://redis.io/docs/management/persistence/" target="_blank" rel="noreferrer">Persistence</a></li><li><a href="https://redis.io/docs/data-types/streams/" target="_blank" rel="noreferrer">Streams tutorial</a></li></ul><hr><h2 id="quick-mental-map" tabindex="-1">Quick mental map <a class="header-anchor" href="#quick-mental-map" aria-label="Permalink to &quot;Quick mental map&quot;">​</a></h2><div class="language- vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>String  → SET/GET, counters, cache blobs</span></span>
+<span class="line"><span>Hash    → fielded objects</span></span>
+<span class="line"><span>List    → queue / recent-N</span></span>
+<span class="line"><span>Set     → unique tags / membership</span></span>
+<span class="line"><span>ZSET    → ranked / time-ordered</span></span>
+<span class="line"><span>Stream  → log + consumer groups</span></span>
+<span class="line"><span>Pub/Sub → live notify (no history)</span></span></code></pre></div><div class="language- vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>redis-cli → PING AUTH SELECT SCAN INFO SLOWLOG</span></span>
+<span class="line"><span>Ops       → TTL, maxmemory, RDB/AOF, REPLICAOF, ACL</span></span></code></pre></div><hr><h2 id="sql-db-↔-redis-quick-diffs" tabindex="-1">SQL DB ↔ Redis quick diffs <a class="header-anchor" href="#sql-db-↔-redis-quick-diffs" aria-label="Permalink to &quot;SQL DB ↔ Redis quick diffs&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Idea</th><th>Postgres / MySQL / SQLite</th><th>Redis</th></tr></thead><tbody><tr><td>Primary model</td><td>Tables / rows</td><td>Keys + typed values</td></tr><tr><td>Query language</td><td>SQL</td><td>Command vocabulary per type</td></tr><tr><td>Durable by default</td><td>Yes</td><td>Optional (RDB/AOF); often used as cache</td></tr><tr><td>Schema</td><td>Declared</td><td>Implicit (app convention)</td></tr><tr><td>Transactions</td><td>ACID SQL tx</td><td><code>MULTI/EXEC</code>, Lua (different guarantees)</td></tr><tr><td>Users</td><td>GRANT/ROLE</td><td>ACL (6+) / requirepass</td></tr><tr><td>“Tables”</td><td>DDL</td><td>Key prefixes: <code>user:1</code>, <code>order:99</code></td></tr><tr><td>Scan all</td><td><code>SELECT</code></td><td><code>SCAN</code> (cursor)</td></tr></tbody></table><h3 id="common-key-naming" tabindex="-1">Common key naming <a class="header-anchor" href="#common-key-naming" aria-label="Permalink to &quot;Common key naming&quot;">​</a></h3><div class="language-text vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">text</span><pre class="shiki shiki-themes github-dark github-dark vp-code" tabindex="0"><code><span class="line"><span>user:{id}                 # string JSON or hash</span></span>
+<span class="line"><span>user:{id}:sessions        # set</span></span>
+<span class="line"><span>feed:{id}                 # list / stream</span></span>
+<span class="line"><span>lb:game:{id}              # zset</span></span>
+<span class="line"><span>lock:{resource}           # string token</span></span>
+<span class="line"><span>cache:page:{slug}         # string with TTL</span></span></code></pre></div><hr><p><em>Compiled for personal study use. Prefer SCAN, TTLs, and ACL in production. Confirm command availability for your Redis major version and hosting platform.</em></p>`,126)])])}const g=n(l,[["render",t]]);export{u as __pageData,g as default};

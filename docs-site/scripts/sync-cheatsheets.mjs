@@ -8,30 +8,76 @@ const site = join(__dirname, '..')
 const sheets = join(root, 'cheatsheets')
 
 const map = [
-  { src: 'postgresql.md', dest: 'sql/postgresql.md', title: 'PostgreSQL' },
-  { src: 'mysql.md', dest: 'sql/mysql.md', title: 'MySQL' },
-  { src: 'sqlite.md', dest: 'sql/sqlite.md', title: 'SQLite' },
-  { src: 'redis.md', dest: 'nosql/redis.md', title: 'Redis' },
-  { src: 'mongodb.md', dest: 'nosql/mongodb.md', title: 'MongoDB' },
-  { src: 'cassandra.md', dest: 'nosql/cassandra.md', title: 'Cassandra' },
-  { src: 'scylladb.md', dest: 'nosql/scylladb.md', title: 'ScyllaDB' },
+  {
+    src: 'postgresql.md',
+    dest: 'sql/postgresql.md',
+    title: 'PostgreSQL',
+    slug: 'postgresql',
+    blurb: 'psql · SQL · admin · ops',
+  },
+  {
+    src: 'mysql.md',
+    dest: 'sql/mysql.md',
+    title: 'MySQL',
+    slug: 'mysql',
+    blurb: 'mysql client · InnoDB · ops',
+  },
+  {
+    src: 'sqlite.md',
+    dest: 'sql/sqlite.md',
+    title: 'SQLite',
+    slug: 'sqlite',
+    blurb: 'embedded · pragmas · file DB',
+  },
+  {
+    src: 'redis.md',
+    dest: 'nosql/redis.md',
+    title: 'Redis',
+    slug: 'redis',
+    blurb: 'cache · structures · streams',
+  },
+  {
+    src: 'mongodb.md',
+    dest: 'nosql/mongodb.md',
+    title: 'MongoDB',
+    slug: 'mongodb',
+    blurb: 'documents · aggregation · indexes',
+  },
+  {
+    src: 'cassandra.md',
+    dest: 'nosql/cassandra.md',
+    title: 'Cassandra',
+    slug: 'cassandra',
+    blurb: 'CQL · wide-column · cluster',
+  },
+  {
+    src: 'scylladb.md',
+    dest: 'nosql/scylladb.md',
+    title: 'ScyllaDB',
+    slug: 'scylladb',
+    blurb: 'CQL · shard-per-core · ops',
+  },
 ]
 
 for (const item of map) {
   const from = join(sheets, item.src)
   const to = join(site, item.dest)
   mkdirSync(dirname(to), { recursive: true })
-  const body = readFileSync(from, 'utf8')
-  // Strip leading H1 if present — VitePress uses frontmatter title
-  const cleaned = body.replace(/^#\s+.+\n+/, '')
+  const body = readFileSync(from, 'utf8').replace(/^#\s+.+\n+/, '')
   const out = `---
 title: ${item.title}
 outline: deep
 ---
 
-# ${item.title}
+<div class="db-hero">
+  <span class="db-logo db-logo--${item.slug}" role="img" aria-label="${item.title} logo"></span>
+  <div>
+    <h1>${item.title}</h1>
+    <p class="db-hero__blurb">${item.blurb}</p>
+  </div>
+</div>
 
-${cleaned}`
+${body}`
   writeFileSync(to, out)
   console.log(`synced ${item.src} → ${item.dest}`)
 }
