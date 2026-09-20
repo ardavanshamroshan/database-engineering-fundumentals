@@ -41,7 +41,7 @@ export default defineConfig({
 
   markdown: {
     theme: {
-      light: 'github-dark',
+      light: 'github-light',
       dark: 'github-dark',
     },
     lineNumbers: false,
@@ -49,7 +49,7 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: `${base}images/logo-mark.svg` }],
-    ['meta', { name: 'theme-color', content: '#ffffff' }],
+    ['meta', { name: 'theme-color', content: '#fafafa' }],
     ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
     [
       'link',

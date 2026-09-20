@@ -4,9 +4,7 @@ title: Home
 
 # Database Engineering
 
-<p class="lead">
-  Practical cheatsheets for SQL and NoSQL — plus the fundamentals study path.
-</p>
+<p class="lead">SQL &amp; NoSQL cheatsheets. Fundamentals study path.</p>
 
 ## Fundamentals
 
