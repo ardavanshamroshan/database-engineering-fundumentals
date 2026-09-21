@@ -608,9 +608,69 @@ Immediate consistency is not guaranteed; the system eventually becomes consisten
 
 Non-clustered / secondary indexes in PostgreSQL work the same idea: the index stores keys + a tuple pointer (`ctid`) into the heap; matching usually costs (at least) index I/O then heap I/O.
 
-- **Example of a query:** How a query performs on the heap versus the index.
+- **Example of a query:**  
+  Suppose you have a table of employees with an index on `email`.
 
----
+  - **Query:**  
+    ```sql
+    SELECT * FROM employees WHERE email = 'bob@email.com';
+    ```
+  
+  - **Heap Only (no index):**  
+    The database has to scan every row in the table to find the one with Bob's email. If the table has 10,000 rows, it checks all 10,000 (could be hundreds of pages!). Very slow for big tables.
+
+  - **With Index:**  
+    1. The database first looks up `'bob@email.com'` in the **index** (fast, usually just 1 or 2 pages read).
+    2. The index tells it exactly which heap page and row has Bob's data.
+    3. It jumps straight there and reads just that page to get the full row.
+    4. Result: The database does just 2 reads (IOs) instead of scanning everything. Much faster!
+
+  #### Row vs Column Oriented Databases
+
+- **Row-Oriented Database (Row Store):**  
+  - Stores entire rows together in each block on disk; all the columns of a row are side-by-side.
+  - Reading a block gives you complete rows at once (all columns and their values for each row).
+  - Scanning for particular rows can take multiple IOs, but once you find the row, all its data is loaded together.
+  - Best for:
+    - Transactional systems (OLTP) where you often read or write full rows (e.g. inserting or updating records).
+    - Workloads that require keeping row integrity for joins or modifications.
+    - Example systems: PostgreSQL, MySQL, SQLite, etc.
+    - Example table (row storage):
+      | id | name    | email              |
+      |----|---------|--------------------|
+      | 1  | Alice   | alice@email.com    |
+      | 2  | Bob     | bob@email.com      |
+      | 3  | Charlie | charlie@email.com  |
+
+![Table in a Row-Oriented Database](images/table-row-oriented.jpg)
+
+- **Column-Oriented Database (Column Store):**  
+  - Stores all values of each column together in separate blocks (column chunks), so values for a given column are physically grouped.
+  - Reading a block returns many values from one column, but not whole rows.
+  - Fetching all values for a column (for filtering or aggregation) is very fast and efficient—just a few blocks might need to be loaded. But reconstructing full rows across many columns can require more IOs.
+  - Best for:
+    - Analytical workloads (OLAP), like reporting, aggregations, and filtering across huge tables.
+    - When you usually process only a few columns at a time, or want to scan large datasets column-wise.
+    - Example systems: ClickHouse, Amazon Redshift, Vertica, Apache Parquet, etc.
+    - Example (simplified view) — columns stored separately:
+      ```
+      id:    [1,   2,    3,    ...]
+      name:  [Alice, Bob, Charlie, ...]
+      email: [alice@email.com, bob@email.com, charlie@email.com, ...]
+      ```
+
+#### Pros and Cons
+
+| Row-Oriented Databases           | Column-Oriented Databases        |
+| -------------------------------- | -------------------------------- |
+| Fast for transactional reads/writes (full rows) | Slower for writes, especially for many columns at once |
+| Ideal for OLTP (transactions, frequent updates) | Ideal for OLAP (analytics, aggregations, reporting) |
+| Less effective data compression  | Excellent compression (column similarity) |
+| Inefficient for aggregation workloads | Extremely efficient for aggregation, filtering, scans on few columns |
+| Efficient for queries involving many/all columns of a row | Inefficient for point queries fetching full rows |
+
+![Table in a Column-Oriented Database](images/table-column-oriented.jpg)
+
 
 ### 04 — Database Indexing
 
