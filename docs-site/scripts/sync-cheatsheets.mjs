@@ -90,6 +90,7 @@ function rewriteReadmeLinks(md) {
       '](https://github.com/ardavanshamroshan/database-engineering-fundumentals/blob/main/README.fa.md)',
     )
     .replace(/\]\(README\.md\)/g, '](/fundamentals/)')
+    .replace(/\]\(images\//g, '](/images/')
     .replace(
       /\]\(cheatsheets\/postgresql\.md\)/g,
       '](/sql/postgresql)',

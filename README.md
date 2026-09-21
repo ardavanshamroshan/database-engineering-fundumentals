@@ -528,9 +528,87 @@ Immediate consistency is not guaranteed; the system eventually becomes consisten
 ### 03 — Understanding Database Internals
 
 - **Status:** `[ ]`
-- **Summary:** Inside the database engine — storage, buffer, execution.
-- **Focus:** How a DBMS works under the hood.
-- **Notes:** *(later)*
+- **Summary:** How data is stored and found inside a database.
+- **Focus:** What happens "under the hood"—storage, pages, indexes, and IO.
+
+#### How tables and indexes are stored and found — explained simply
+
+**Key Database Storage Ideas:**
+
+- **Table:** Just a grid that stores your data as rows and columns.
+  
+  *Example:*
+  
+  | id | name    | email              |
+  |----|---------|--------------------|
+  | 1  | Alice   | alice@email.com    |
+  | 2  | Bob     | bob@email.com      |
+  | 3  | Charlie | charlie@email.com  |
+  
+  Each row is a record. Columns are data fields.
+  
+  *PostgreSQL code sample:*
+  ```sql
+  CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  ```
+
+- **Row ID:** Every row has a unique identifier. This helps the database find exactly the row it needs, quickly. Sometimes it's the primary key; sometimes (like in PostgreSQL) it's a hidden system value.
+
+- **Page:** Databases store and move data in "pages" — chunks (usually 8KB or 16KB). One page holds several rows. When the database reads data, it grabs whole pages, not just single rows.
+
+    - Example: If each page can hold 3 rows, and your table has 1,001 rows, you'll use about 334 pages.
+
+- **IO (Input/Output):** The act of reading/writing between the computer’s memory and the storage disk/SSD. Each IO operation reads at least a whole page, never a single row. Too many IOs = slow database.
+
+- **Heap:** This is a simple way the database saves table rows: just stick each row in the next available spot (no sorting). Fast to insert, but slow to search unless there's help.
+
+    - If you want to find something fast without looking everywhere, you need...
+
+- **Index:** An index is like a map that points you straight to the row(s) you want in the table (the "heap"). Most often, indexes are organized as **B-Trees** or **B+Trees**—special kinds of sorted trees that make finding data very fast.
+
+    - **How indexes work:**
+      1. The index holds key data (some columns).
+      2. For each key, it has a pointer to the heap location (what page, what row).
+      3. You search the index, and it tells the database exactly where to find your record—no need to scan the whole table!
+
+    - **Index highlights:**
+        - Can cover one or multiple columns (you pick when you create the index).
+        - Stored as pages, like tables, but usually much smaller and more memory-friendly.
+        - Most common: **B-Tree** or **B+Tree** structures.
+
+    - **Picture it:**
+      ```
+      [Index on email]
+           |
+       "bob@email.com"
+           |
+      points to
+           |
+      [Heap Page X] → Row for Bob
+      ```
+
+**In summary**:  
+- Data is stored in tables (rows & columns).
+- Each row sits in a page.  
+- The database moves pages, not individual rows.
+- The heap just packs rows wherever there’s space.
+- Indexes are search aids—they point straight to data, so you don’t have to look through every row.
+
+![Index on EMP_ID pointing into a Heap — two I/O steps](images/index-emp-id-heap.png)
+
+**Diagram — Index lookup vs Heap fetch**
+
+1. **IO1 on the index:** search the index on `EMP_ID` to find the pointer `(page_id, row_id)`.
+2. **IO2 on the heap:** use that pointer to read the exact heap page and pull the full row.
+
+Non-clustered / secondary indexes in PostgreSQL work the same idea: the index stores keys + a tuple pointer (`ctid`) into the heap; matching usually costs (at least) index I/O then heap I/O.
+
+- **Example of a query:** How a query performs on the heap versus the index.
 
 ---
 
