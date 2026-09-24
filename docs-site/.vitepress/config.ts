@@ -31,6 +31,7 @@ const sidebar = [
 ]
 
 export default defineConfig({
+  lang: 'en-US',
   title: 'Database Engineering',
   description: 'Fundamentals and cheatsheets for SQL and NoSQL databases.',
   base,
@@ -41,22 +42,23 @@ export default defineConfig({
 
   markdown: {
     theme: {
-      light: 'github-dark',
-      dark: 'github-dark',
+      light: 'material-theme-palenight',
+      dark: 'material-theme-palenight',
     },
-    lineNumbers: false,
+    lineNumbers: true,
   },
 
   head: [
+    ['link', { rel: 'stylesheet', href: `${base}fonts/fonts.css` }],
     ['link', { rel: 'icon', href: `${base}images/logo-mark.svg` }],
-    ['meta', { name: 'theme-color', content: '#ebebeb' }],
+    ['meta', { name: 'theme-color', content: '#0d9488' }],
   ],
 
   themeConfig: {
     logo: '/images/logo-mark.svg',
     siteTitle: 'Database Engineering',
     nav: [
-      { text: 'Fundamentals', link: '/fundamentals/' },
+      { text: 'Docs', link: '/fundamentals/' },
       {
         text: 'Cheatsheets',
         items: [
@@ -85,8 +87,8 @@ export default defineConfig({
 
     footer: {
       message:
-        'Built by <a href="https://ardavanshamroshan.ir" target="_blank" rel="noopener">Ardavan ShamRoshan</a> · <a href="https://github.com/ardavanshamroshan" target="_blank" rel="noopener">GitHub</a> · <a href="mailto:ardavanshamroshan@yahoo.com">Email</a> · logos via Simple Icons (CC0)',
-      copyright: '© Database Engineering Fundamentals',
+        'Built by <a href="https://ardavanshamroshan.ir" target="_blank" rel="noopener">Ardavan ShamRoshan</a> · <a href="https://github.com/ardavanshamroshan" target="_blank" rel="noopener">GitHub</a>',
+      copyright: 'Database Engineering Fundamentals — free to learn and share',
     },
 
     outline: {

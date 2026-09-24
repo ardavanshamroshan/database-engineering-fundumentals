@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, copyFileSync, readdirSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -163,4 +163,18 @@ outline: deep
 ${en}`,
   )
   console.log('synced README.md → fundamentals/index.md')
+}
+
+// --- Root images → public/images (single source of truth) ---
+{
+  const srcDir = join(root, 'images')
+  const destDir = join(site, 'public/images')
+  if (existsSync(srcDir)) {
+    mkdirSync(destDir, { recursive: true })
+    for (const name of readdirSync(srcDir)) {
+      if (name.startsWith('.')) continue
+      copyFileSync(join(srcDir, name), join(destDir, name))
+      console.log(`synced images/${name} → public/images/${name}`)
+    }
+  }
 }
