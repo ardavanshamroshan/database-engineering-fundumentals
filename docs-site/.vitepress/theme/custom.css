@@ -63,6 +63,7 @@
 
   --vp-nav-height: 4rem;
   --vp-sidebar-width: 260px;
+  --vp-layout-max-width: 1440px;
   --vp-code-block-bg: var(--color-code-bg);
   --vp-code-copy-code-bg: transparent;
   --vp-code-copy-code-hover-bg: color-mix(in oklab, #fff 8%, transparent);
@@ -173,9 +174,14 @@
 
 .VPNavBar .container,
 .VPNavBar .wrapper {
-  max-width: 1400px;
   margin-inline: auto;
   height: 100%;
+}
+
+/* Cap width only on home / pages without sidebar — docs need full-bleed nav shell */
+.VPNavBar:not(.has-sidebar) .container,
+.VPNavBar:not(.has-sidebar) .wrapper {
+  max-width: 1400px;
 }
 
 .VPNavBar .container {
@@ -183,16 +189,16 @@
 }
 
 @media (min-width: 1280px) {
-  .VPNavBar .container {
+  .VPNavBar:not(.has-sidebar) .container {
     padding-inline: 4rem;
   }
+}
 
+/* Docs nav: no extra inline padding — VitePress positions title/content for sidebar */
+@media (min-width: 960px) {
   .VPNavBar.has-sidebar .container {
-    border-left: 1px solid var(--color-sand-light-5);
-  }
-
-  .dark .VPNavBar.has-sidebar .container {
-    border-left-color: var(--color-sand-dark-5);
+    padding-inline: 0;
+    max-width: 100%;
   }
 }
 
@@ -261,7 +267,8 @@
 
 /* Sidebar */
 .VPSidebar {
-  z-index: 25 !important;
+  /* Keep VitePress token: 60 mobile (above backdrop), 25 desktop */
+  z-index: var(--vp-z-index-sidebar) !important;
   background: var(--color-sand-light-1) !important;
   border-right: 1px solid var(--color-sand-light-5);
   scrollbar-width: thin;
@@ -292,6 +299,17 @@
     background-color: var(--color-sand-dark-1) !important;
   }
 }
+
+/* Ultrawide: restore VitePress centered shell so sidebar isn't crushed under content */
+@media (min-width: 1440px) {
+  .VPSidebar {
+    padding-left: max(32px, calc((100% - (var(--vp-layout-max-width) - 64px)) / 2)) !important;
+    width: calc(
+      (100% - (var(--vp-layout-max-width) - 64px)) / 2 + var(--vp-sidebar-width) - 32px
+    ) !important;
+  }
+}
+
 
 .VPSidebar > .nav {
   flex: 1;
@@ -585,7 +603,10 @@
   width: 100%;
   margin: 1.25rem 0 1.75rem;
   font-size: 0.8125rem;
-  display: table;
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
 }
 
 .vp-doc th,
@@ -865,7 +886,9 @@
 }
 
 .VPFeatures {
-  padding: 1.25rem 0 0.5rem !important;
+  /* Keep VitePress horizontal gutters; only tighten vertical rhythm */
+  padding-top: 1.25rem !important;
+  padding-bottom: 0.5rem !important;
 }
 
 .VPFeatures .container {
@@ -965,9 +988,22 @@
   font-weight: 500;
 }
 
+/* Content container width — match VitePress sidebar gutter at each breakpoint */
 @media (min-width: 960px) {
   .VPContent.has-sidebar {
-    padding-left: var(--vp-sidebar-width) !important;
+    padding-inline-start: var(--vp-sidebar-width) !important;
+    padding-left: unset;
+  }
+}
+
+@media (min-width: 1440px) {
+  .VPContent.has-sidebar {
+    padding-inline-start: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    ) !important;
+    padding-inline-end: calc((100vw - var(--vp-layout-max-width)) / 2) !important;
+    padding-left: unset;
+    padding-right: unset;
   }
 }
 
@@ -977,6 +1013,175 @@
 
 .Layout {
   font-feature-settings: 'ss02' 1, 'ss09' 1;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Responsive — mobile / tablet / desktop / ultrawide                         */
+/* -------------------------------------------------------------------------- */
+
+html,
+body {
+  overflow-x: clip;
+}
+
+.Layout {
+  min-width: 0;
+  font-feature-settings: 'ss02' 1, 'ss09' 1;
+}
+
+.vp-doc {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.VPDoc .content-container {
+  max-width: min(52rem, 100%) !important;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .VPDoc {
+    padding-top: 1rem !important;
+  }
+
+  .vp-doc h1 {
+    font-size: 1.65rem;
+    margin-bottom: 1.15rem;
+  }
+
+  .vp-doc h2 {
+    font-size: 1.25rem;
+    margin-top: 1.5rem;
+  }
+
+  .vp-doc h3 {
+    font-size: 1.05rem;
+  }
+
+  .vp-doc p,
+  .vp-doc li {
+    font-size: 0.9rem;
+  }
+
+  .vp-doc .header-anchor {
+    display: none;
+  }
+
+  .vp-doc div[class*='language-'] > pre {
+    padding: 0.85rem 0.9rem !important;
+    font-size: 12px;
+  }
+
+  .vp-doc div[class*='language-'].line-numbers-mode > pre {
+    padding-left: 2.75rem !important;
+  }
+
+  .vp-doc .line-numbers-wrapper {
+    width: 2.1rem;
+    font-size: 12px;
+    padding-top: 0.85rem;
+  }
+
+  .VPNavBarSearch .DocSearch-Button {
+    width: 2.25rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .VPNavBarTitle .title {
+    font-size: 0.875rem;
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .VPNavBarTitle .logo {
+    height: 1.2rem;
+    margin-inline-end: 0.35rem;
+  }
+
+  .VPHero.VPHomeHero {
+    padding: 1.75rem 1.25rem 1rem !important;
+  }
+
+  .VPFeature .box {
+    padding: 0.9rem 1rem !important;
+  }
+
+  .VPDocFooter .pager-link {
+    padding: 0.65rem 0.85rem;
+  }
+}
+
+@media (max-width: 419px) {
+  .VPNavBar .container {
+    padding-inline: 0.75rem;
+  }
+
+  .VPNavBarTitle .title {
+    max-width: 36vw;
+  }
+
+  .VPButton.medium {
+    padding: 0.45rem 0.75rem !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 959px) {
+  .VPDoc {
+    padding-top: 1.35rem !important;
+  }
+
+  .VPHero.VPHomeHero {
+    padding: 2.25rem 2rem 1.15rem !important;
+  }
+}
+
+@media (min-width: 960px) {
+  .Layout .VPContent,
+  .Layout .VPContent.is-home,
+  .Layout .VPContent.has-sidebar {
+    padding-top: var(--vp-nav-height) !important;
+  }
+
+  .Layout .VPNav {
+    z-index: var(--vp-z-index-nav) !important;
+  }
+
+  .Layout .VPSidebar {
+    z-index: var(--vp-z-index-sidebar) !important;
+  }
+}
+
+.vp-doc pre,
+.vp-doc :not(pre) > code {
+  max-width: 100%;
+}
+
+.vp-doc div[class*='language-'] {
+  max-width: 100%;
+}
+
+.custom-block {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.VPHero .name,
+.VPHero .text {
+  max-width: 100% !important;
+  width: auto !important;
+}
+
+.VPHero .tagline {
+  max-width: min(30rem, 100%);
+}
+
+.VPHero .actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
 }
 
 ::selection {
