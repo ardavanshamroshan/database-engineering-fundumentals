@@ -835,6 +835,655 @@ Skip / waste:
 
 Indexes speed **selective reads**. They slow **writes** and consume RAM/disk. Measure with `EXPLAIN (ANALYZE, BUFFERS)` on realistic row counts, not 1k toy tables.
 
+### 04.1 — Index Scan vs Index Only Scan
+
+- **Status:** `[ ]`
+- **Summary:** How PostgreSQL retrieves rows through an index, and when it can avoid reading the heap entirely.
+- **Focus:** `Index Scan`, `Index Only Scan`, heap fetches, covering indexes, and visibility map.
+
+#### Index Scan — index → heap
+
+An **Index Scan** uses the index to find matching rows, but then goes to the table's **heap** to retrieve the remaining columns.
+
+For a B-Tree index, the basic flow is:
+
+```text
+Query
+  ↓
+B-Tree index
+  ↓
+find matching key
+  ↓
+CTID
+  ↓
+heap page
+  ↓
+table row
+```
+
+Example:
+
+```sql
+CREATE TABLE employees (
+    id   serial PRIMARY KEY,
+    name varchar(255),
+    email varchar(255)
+);
+
+INSERT INTO employees (name, email)
+SELECT
+    'User ' || i,
+    'user' || i || '@example.com'
+FROM generate_series(1, 100000) AS i;
+
+CREATE INDEX employees_email ON employees(email);
+```
+
+Now query by email:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT *
+FROM employees
+WHERE email = 'user50000@example.com';
+```
+
+A typical plan:
+
+```text
+Index Scan using employees_email on employees
+  Index Cond: (email = 'user50000@example.com')
+```
+
+Why is it an **Index Scan**?
+
+The index contains approximately:
+
+```text
+email → CTID
+```
+
+For example:
+
+```text
+user50000@example.com → (page 270, slot 15)
+```
+
+The index can find the row's location, but the query asks for:
+
+```sql
+SELECT *
+```
+
+The index does not contain all columns of the table.
+
+So PostgreSQL must visit the heap:
+
+```text
+employees_email
+      │
+      │ find email
+      ↓
+    CTID
+      │
+      │ visit heap
+      ↓
+┌─────────────────────┐
+│ id                  │
+│ name                │
+│ email               │
+└─────────────────────┘
+```
+
+### Simple example
+
+```sql
+SELECT id
+FROM employees
+WHERE email = 'user50000@example.com';
+```
+
+The index knows:
+
+```text
+email → CTID
+```
+
+but it does **not** normally know:
+
+```text
+email → id
+```
+
+Therefore PostgreSQL still needs to visit the heap to retrieve `id`.
+
+---
+
+#### Index Only Scan — stay inside the index
+
+An **Index Only Scan** is different.
+
+PostgreSQL can answer the query directly from the index without reading the heap row.
+
+For example, the primary key creates an index:
+
+```sql
+CREATE TABLE employees (
+    id   serial PRIMARY KEY,
+    name varchar(255)
+);
+```
+
+The primary key index contains:
+
+```text
+id → CTID
+```
+
+Now:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM employees
+WHERE id = 50000;
+```
+
+PostgreSQL may use:
+
+```text
+Index Only Scan using employees_pkey on employees
+  Index Cond: (id = 50000)
+  Heap Fetches: 0
+```
+
+The important part is:
+
+```text
+Heap Fetches: 0
+```
+
+The query only needs `id`.
+
+The index already contains `id`, so PostgreSQL does not need the heap.
+
+```text
+Query
+  ↓
+B-Tree index
+  ↓
+find id = 50000
+  ↓
+return id
+```
+
+No second trip to the heap.
+
+---
+
+#### Index Scan vs Index Only Scan
+
+The easiest way to remember the difference:
+
+```text
+Index Scan
+
+Index
+  ↓
+CTID
+  ↓
+Heap
+  ↓
+Result
+```
+
+```text
+Index Only Scan
+
+Index
+  ↓
+Result
+```
+
+| | Index Scan | Index Only Scan |
+|---|---|---|
+| Uses index | Yes | Yes |
+| Reads heap | Usually yes | Can avoid it |
+| Needs CTID | Yes | Not for returning indexed values |
+| Can return indexed columns | Yes | Yes |
+| `Heap Fetches: 0` possible | No | Yes |
+| Usually faster | Sometimes | Often |
+
+---
+
+#### Why can Index Only Scan still access the heap?
+
+There is an important PostgreSQL detail.
+
+PostgreSQL uses **MVCC**, so an index entry alone does not always tell PostgreSQL whether the corresponding row is visible to the current transaction.
+
+PostgreSQL maintains a **visibility map** for heap pages.
+
+Conceptually:
+
+```text
+Visibility Map
+
+Heap Page 1 → all-visible
+Heap Page 2 → all-visible
+Heap Page 3 → not all-visible
+Heap Page 4 → all-visible
+```
+
+If the heap page containing the row is marked **all-visible**, PostgreSQL knows it does not need to check the heap for visibility.
+
+Therefore:
+
+```text
+Index Only Scan
+Heap Fetches: 0
+```
+
+is possible.
+
+If the visibility information is not sufficient:
+
+```text
+Index Only Scan
+Heap Fetches: 150
+```
+
+can happen.
+
+So:
+
+> **Index Only Scan means PostgreSQL has a plan that can answer from the index, but it may still perform heap fetches to check visibility.**
+
+---
+
+#### Check it yourself
+
+Create a larger table:
+
+```sql
+CREATE TABLE employees_big (
+    id   serial PRIMARY KEY,
+    name varchar(255),
+    email varchar(255)
+);
+
+INSERT INTO employees_big (name, email)
+SELECT
+    'User ' || i,
+    'user' || i || '@example.com'
+FROM generate_series(1, 100000) AS i;
+```
+
+Run:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM employees_big
+WHERE id = 50000;
+```
+
+You may see something similar to:
+
+```text
+Index Only Scan using employees_big_pkey on employees_big
+  Index Cond: (id = 50000)
+  Heap Fetches: 0
+```
+
+The important observation is:
+
+```text
+SELECT id
+```
+
+and:
+
+```text
+PRIMARY KEY → index contains id
+```
+
+Therefore PostgreSQL can potentially answer the entire query from the index.
+
+---
+
+#### `SELECT *` changes the situation
+
+Compare:
+
+```sql
+SELECT id
+FROM employees_big
+WHERE id = 50000;
+```
+
+with:
+
+```sql
+SELECT *
+FROM employees_big
+WHERE id = 50000;
+```
+
+The first query only needs:
+
+```text
+id
+```
+
+which exists in the primary-key index.
+
+The second needs:
+
+```text
+id
+name
+email
+```
+
+but the primary-key index does not contain `name` and `email`.
+
+Therefore PostgreSQL normally needs the heap:
+
+```text
+SELECT id
+       ↓
+Index Only Scan
+       ↓
+Index
+
+SELECT *
+       ↓
+Index Scan
+       ↓
+Index
+       ↓
+Heap
+```
+
+---
+
+#### Covering Index with `INCLUDE`
+
+PostgreSQL allows us to store additional columns in an index using `INCLUDE`.
+
+Example:
+
+```sql
+CREATE INDEX employees_email_covering
+ON employees_big(email)
+INCLUDE (id);
+```
+
+Now the index conceptually contains:
+
+```text
+email → id + CTID
+```
+
+Run:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM employees_big
+WHERE email = 'user50000@example.com';
+```
+
+The query can potentially use:
+
+```text
+Index Only Scan using employees_email_covering
+```
+
+because:
+
+```text
+WHERE email = ...
+```
+
+is supported by the indexed key, and:
+
+```text
+SELECT id
+```
+
+is available from the included column.
+
+This is called a **covering index**.
+
+---
+
+#### `INCLUDE` vs normal index columns
+
+Consider:
+
+```sql
+CREATE INDEX employees_email
+ON employees_big(email);
+```
+
+The index key is:
+
+```text
+email
+```
+
+Now:
+
+```sql
+SELECT id
+FROM employees_big
+WHERE email = 'user50000@example.com';
+```
+
+may require a heap lookup.
+
+With:
+
+```sql
+CREATE INDEX employees_email_covering
+ON employees_big(email)
+INCLUDE (id);
+```
+
+the index contains the additional `id` value.
+
+Conceptually:
+
+```text
+Key columns:
+email
+
+Included columns:
+id
+```
+
+The included column is stored for covering queries; it is not part of the index's search/order key.
+
+---
+
+#### Lab — Compare the two
+
+First create the normal index:
+
+```sql
+DROP INDEX IF EXISTS employees_email;
+
+CREATE INDEX employees_email
+ON employees_big(email);
+```
+
+Run:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM employees_big
+WHERE email = 'user50000@example.com';
+```
+
+Now replace it with a covering index:
+
+```sql
+DROP INDEX employees_email;
+
+CREATE INDEX employees_email_covering
+ON employees_big(email)
+INCLUDE (id);
+```
+
+Run the same query:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM employees_big
+WHERE email = 'user50000@example.com';
+```
+
+Compare:
+
+```text
+Normal index:
+
+Index Scan
+    ↓
+Heap
+```
+
+with:
+
+```text
+Covering index:
+
+Index Only Scan
+    ↓
+Index
+```
+
+Then check:
+
+```text
+Heap Fetches: 0
+```
+
+---
+
+#### Important: `Index Only Scan` is not automatically faster
+
+An Index Only Scan can be faster because it can avoid heap reads, but PostgreSQL still considers the total cost.
+
+For example:
+
+```sql
+SELECT *
+FROM employees_big
+WHERE email = 'user50000@example.com';
+```
+
+If the index does not contain every requested column, PostgreSQL still needs the heap.
+
+Adding every column to an index is usually a bad idea:
+
+```sql
+CREATE INDEX huge_index
+ON employees_big(email)
+INCLUDE (id, name, address, phone, ...)
+```
+
+Indexes consume:
+
+- Disk space
+- Memory/cache
+- Insert cost
+- Update cost
+- Delete cost
+- Maintenance time
+
+The goal is not:
+
+> "Make every query use Index Only Scan."
+
+The goal is:
+
+> **Create indexes that make important queries cheaper without making writes and maintenance unnecessarily expensive.**
+
+---
+
+#### Practical rule
+
+When reading an execution plan:
+
+```text
+Index Scan
+```
+
+think:
+
+> **"PostgreSQL found the row through the index, then went to the heap."**
+
+When you see:
+
+```text
+Index Only Scan
+Heap Fetches: 0
+```
+
+think:
+
+> **"PostgreSQL answered the query directly from the index without reading the heap."**
+
+And when you see:
+
+```text
+Index Only Scan
+Heap Fetches: 1000
+```
+
+think:
+
+> **"The index contains the required columns, but PostgreSQL still had to visit heap pages for visibility checks."**
+
+---
+
+#### Quick mental model
+
+```text
+                  PostgreSQL SELECT
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+          Index Scan          Index Only Scan
+              │                     │
+        Find matching key     Find matching key
+              │                     │
+             CTID            Data already in index
+              │                     │
+            Heap              Visibility Map
+              │                     │
+              └───────┬─────────────┘
+                      ↓
+                    Result
+```
+
+The key distinction is simple:
+
+```text
+Index Scan
+= Index + Heap
+
+Index Only Scan
+= Index (+ visibility check)
+```
+
+This distinction becomes especially important when designing **covering indexes**, analyzing `EXPLAIN (ANALYZE, BUFFERS)`, and optimizing high-frequency read queries.
+
 ---
 
 ### 05 — B-Tree vs B+Tree in Production Database Systems
