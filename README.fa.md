@@ -677,7 +677,163 @@ Master به نام `A` و دو replica به نام `A1` و `A2`:
 - **وضعیت:** `[ ]`
 - **خلاصه:** ایندکس چیست، کی بسازیم، هزینه خواندن/نوشتن.
 - **تمرکز:** انواع ایندکس، selectivity، و trade-offها.
-- **یادداشت:** *(بعداً)*
+
+#### Heap در برابر Index (دو فایل جدا)
+
+سطرهای جدول در PostgreSQL داخل **Heap** زندگی می‌کنند: صفحات نامرتب ۸ کیلوبایتی. Insert سطر را در اولین صفحهٔ دارای جا می‌گذارد. بدون مرتب‌سازی. نوشتن سریع. جستجو بدون کمک کند است — موتور **Seq Scan** می‌کند و همهٔ صفحات Heap را می‌خواند.
+
+**Index** ساختار دوم است (معمولاً B-Tree). هر برگ `(key → ctid)` نگه می‌دارد. `ctid` همان `(page, slot)` است — آدرس سطر در Heap.
+
+```
+INSERT  →  نوشتن صفحهٔ Heap  (+ نوشتن هر ایندکس روی آن جدول)
+SELECT  →  Seq Scan روی Heap
+        یا Index Scan: پیمایش ایندکس → ctid → صفحهٔ Heap (IO1 + IO2)
+        یا Index Only Scan: جواب از خود ایندکس؛ Heap Fetches = 0 اگر visibility map بگوید صفحه all-visible است
+```
+
+`PRIMARY KEY` / `UNIQUE` از قبل یک B-Tree یکتا می‌سازند. `CREATE INDEX` درخت اضافه می‌سازد. `SELECT *` بدون `WHERE` هیچ‌وقت از ایندکس استفاده نمی‌کند — خواستی همهٔ سطرهای Heap را.
+
+![ایندکس روی EMP_ID و اشاره‌گر به Heap — دو مرحله IO](images/index-emp-id-heap.png)
+
+#### آزمایشگاه (PostgreSQL 18.4)
+
+```sql
+CREATE TABLE employees (
+  id   serial PRIMARY KEY,   -- btree یکتای employees_pkey
+  name varchar(255)
+);
+
+INSERT INTO employees (name)
+SELECT 'User ' || generate_series(1, 1000);
+
+SELECT * FROM employees WHERE id = 1;
+
+EXPLAIN ANALYZE SELECT id FROM employees WHERE id = 2000;
+EXPLAIN ANALYZE SELECT id FROM employees WHERE name LIKE '%User %';
+
+CREATE INDEX employees_name ON employees(name);
+
+CREATE TABLE grades (
+  id   serial PRIMARY KEY,
+  name varchar(255)
+);
+CREATE INDEX idx_grades_names ON grades(name);
+
+EXPLAIN ANALYZE SELECT * FROM grades;  -- اجرا + زمان واقعی
+EXPLAIN SELECT * FROM grades;          -- فقط تخمین
+```
+
+۱٬۰۰۰ سطر خیلی کوچک است (Heap ≈ ۶ صفحه). Planner اغلب Seq Scan را ترجیح می‌دهد. همان کوئری روی ۱۰۰٬۰۰۰ سطر فاصله را نشان می‌دهد.
+
+`EXPLAIN` = هزینهٔ تخمینی. `EXPLAIN ANALYZE` = واقعاً اجرا می‌کند. `BUFFERS` تعداد صفحات را می‌شمارد.
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id FROM employees WHERE id = 2000;
+```
+
+#### بنچمارک (لوکال، PostgreSQL 18.4، کش گرم)
+
+| کوئری | Plan | Heap / صفحات | زمان |
+| ----- | ---- | ------------ | ---- |
+| `SELECT * FROM employees WHERE id = 1` (1k) | **Index Scan** `employees_pkey` | ایندکس + Heap (۳ بافر) | ~0.12 ms |
+| `SELECT id FROM employees WHERE id = 2000` (1k، miss) | **Index Only Scan** `employees_pkey` | Heap Fetches: 0 · ۲ بافر | 0.028 ms |
+| `SELECT id … WHERE name LIKE '%User %'` (1k) | **Seq Scan** | ۶ صفحه Heap، ۱۰۰۰ hit | 0.17 ms |
+| `SELECT * FROM grades` (خالی) | **Seq Scan** | ۰ صفحه | 0.007 ms |
+| `SELECT id FROM employees_big WHERE id = 2000` (100k) | **Index Only Scan** | Heap Fetches: 0 · ۳ بافر | **0.005 ms** |
+| `SELECT * FROM employees_big WHERE id = 2000` | **Index Scan** | ایندکس + Heap (۳ بافر) | 0.014 ms |
+| `SELECT id … WHERE name = 'User 50000'` | **Index Scan** `employees_big_name` | ایندکس + Heap | 0.017 ms |
+| `SELECT id … WHERE name LIKE '%User 99999'` | **Seq Scan** | **۵۴۱ صفحه Heap**، ۹۹٬۹۹۹ فیلتر | **3.5 ms** |
+| `LIKE 'User 5000%'` btree پیش‌فرض | **Seq Scan** | ۵۴۱ صفحه | ~12 ms |
+| `LIKE 'User 5000%'` + `varchar_pattern_ops` | **Index Scan** | ~۵ بافر، ۱۱ سطر | **0.029 ms** |
+
+اندازه (100k سطر): Heap **4328 kB** (۵۴۱ صفحه) · ایندکس PK **2208 kB** · ایندکس name **3104 kB**. ایندکس فضای اضافه است؛ هر `INSERT`/`UPDATE`/`DELETE` باید آن را هم بنویسد.
+
+#### معنی هر Plan
+
+**۱. Index Scan — اول ایندکس، بعد Heap**
+
+```sql
+SELECT * FROM employees WHERE id = 1;
+-- Index Scan using employees_pkey
+-- Index Cond: (id = 1)
+```
+
+B-Tree کلید اصلی `ctid` را پیدا می‌کند، بعد همان صفحهٔ Heap را برای `name` می‌خواند. دو IO در نمودار بالا. لازم است وقتی ایندکس همهٔ ستون‌های SELECT را ندارد.
+
+**۲. Index Only Scan — داخل ایندکس بمان**
+
+```sql
+SELECT id FROM employees WHERE id = 2000;
+-- Index Only Scan using employees_pkey
+-- Heap Fetches: 0
+```
+
+`id` داخل `employees_pkey` است؛ سطر Heap لازم نیست. `id = 2000` روی جدول ۱k یک **miss** است (`rows=0`) — باز هم ارزان: یک جستجوی ایندکس، نه پیمایش جدول.
+
+`Heap Fetches: 0` بعد از `VACUUM`: visibility map صفحات Heap را all-visible علامت می‌زند. اگر vacuum کهنه باشد، Postgres حتی در plan از نوع index-only به Heap سرک می‌کشد (`Heap Fetches > 0`).
+
+**۳. Seq Scan — پیمایش Heap**
+
+```sql
+SELECT id FROM employees WHERE name LIKE '%User %';
+-- Seq Scan on employees
+-- Filter: (name ~~ '%User %')
+```
+
+`%` اول کلید را در B-Tree نمی‌شود seek کرد (درخت از **ابتدای** کلید مرتب است). موتور همهٔ صفحات Heap را می‌خواند و فیلتر می‌زند. همین plan **قبل و بعد** از `CREATE INDEX employees_name`. ایندکس کمک نمی‌کند.
+
+`grades` خالی: `SELECT *` بدون `WHERE`. ایندکس روی `name` بی‌استفاده. Seq Scan صفر صفحه.
+
+**۴. تساوی روی ایندکس ثانویه باز هم Heap می‌زند**
+
+```sql
+CREATE INDEX employees_name ON employees(name);
+
+SELECT id FROM employees WHERE name = 'User 500';
+-- Index Scan using employees_name   -- نه Index Only
+```
+
+ایندکس name فقط `(name → ctid)` دارد، نه `id`. اسم را پیدا کن، بعد سطر Heap را بگیر تا `id` برگردد. Covering index با `INCLUDE (id)` می‌تواند این را Index Only Scan کند.
+
+**۵. `LIKE` پیشوندی opclass درست می‌خواهد**
+
+B-Tree پیش‌فرض روی `varchar` (collation غیر `C`) از `=` و `<` و `>` پشتیبانی می‌کند. از `LIKE 'User 5%'` **پشتیبانی نمی‌کند**. Planner حتی روی 100k سطر Seq Scan می‌کند.
+
+```sql
+CREATE INDEX employees_name_pattern ON employees (name varchar_pattern_ops);
+
+-- حالا:
+-- Index Cond: (name ~>=~ 'User 5000' AND name ~<~ 'User 5001')
+-- Filter: (name ~~ 'User 5000%')
+```
+
+رنج روی ایندکس، بعد فیلتر `~~`. `LIKE '%User %'` با `%` اول همچنان Seq Scan است.
+
+#### کی ایندکس بسازیم
+
+بساز برای:
+
+- تساوی / رنج روی ستون selective (`WHERE id =`، `WHERE email =`، `WHERE created_at >`)
+- کلید join و `ORDER BY` هم‌تراز با ترتیب ایندکس
+- `LIKE 'foo%'` **با** `varchar_pattern_ops` (یا collation `C`)
+
+نساز / هدر است:
+
+- جدول خیلی کوچک (۱k سطر، چند صفحه) — Seq Scan از قبل ارزان است
+- `SELECT *` بدون فیلتر
+- `LIKE '%…%'` با `%` اول (اگر مجبوری `pg_trgm` GIN)
+- ستون کم‌selectivity (`boolean`، status با ۲ مقدار) — lookup ایندکس + IO تصادفی Heap می‌تواند از Seq Scan ببازد
+
+#### هزینه خواندن در برابر نوشتن
+
+| | فقط Heap | Heap + ایندکس‌ها |
+| --- | --- | --- |
+| `INSERT` | append سطر به یک صفحه Heap | Heap **به‌علاوه** insert در هر btree |
+| Point `SELECT` | اسکن همهٔ صفحات Heap | چند صفحه ایندکس + شاید ۱ صفحه Heap |
+| `UPDATE` ستون ایندکس‌شده | Heap + سطر جدید (MVCC) | به‌علاوه به‌روز کردن / insert در ایندکس |
+
+ایندکس **خواندن selective** را تند می‌کند. **نوشتن** را کند می‌کند و RAM/دیسک می‌خورد. با `EXPLAIN (ANALYZE, BUFFERS)` روی تعداد سطر واقعی بسنج، نه جدول اسباب‌بازی ۱k.
 
 ---
 

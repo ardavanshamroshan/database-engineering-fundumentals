@@ -677,7 +677,163 @@ Non-clustered / secondary indexes in PostgreSQL work the same idea: the index st
 - **Status:** `[ ]`
 - **Summary:** What indexes are, when to create them, read/write cost.
 - **Focus:** Index types, selectivity, and trade-offs.
-- **Notes:** *(later)*
+
+#### Heap vs index (the two files)
+
+PostgreSQL table rows live in the **heap**: unordered 8KB pages. Insert puts the tuple in the first page with space. No sort. Fast write. Slow lookup — without help, the engine **Seq Scans** every heap page.
+
+An **index** is a second structure (usually a B-Tree). Each leaf stores `(key → ctid)`. `ctid` is `(page, slot)` — the heap address.
+
+```
+INSERT  →  write heap page  (+ write every index on that table)
+SELECT  →  Seq Scan heap
+        or Index Scan: walk index → ctid → heap page (IO1 + IO2)
+        or Index Only Scan: answer from index; Heap Fetches = 0 if visibility map says page all-visible
+```
+
+`PRIMARY KEY` / `UNIQUE` already create a unique B-Tree. `CREATE INDEX` adds extra trees. `SELECT *` with no `WHERE` never uses them — you asked for every heap row.
+
+![Index on EMP_ID pointing into a Heap — two I/O steps](images/index-emp-id-heap.png)
+
+#### Lab (PostgreSQL 18.4)
+
+```sql
+CREATE TABLE employees (
+  id   serial PRIMARY KEY,   -- creates unique btree employees_pkey
+  name varchar(255)
+);
+
+INSERT INTO employees (name)
+SELECT 'User ' || generate_series(1, 1000);
+
+SELECT * FROM employees WHERE id = 1;
+
+EXPLAIN ANALYZE SELECT id FROM employees WHERE id = 2000;
+EXPLAIN ANALYZE SELECT id FROM employees WHERE name LIKE '%User %';
+
+CREATE INDEX employees_name ON employees(name);
+
+CREATE TABLE grades (
+  id   serial PRIMARY KEY,
+  name varchar(255)
+);
+CREATE INDEX idx_grades_names ON grades(name);
+
+EXPLAIN ANALYZE SELECT * FROM grades;  -- measured
+EXPLAIN SELECT * FROM grades;          -- estimate only
+```
+
+1 000 rows is tiny (heap ≈ 6 pages). Planner often prefers Seq Scan. Same queries on 100 000 rows make the gap obvious.
+
+`EXPLAIN` = estimated cost. `EXPLAIN ANALYZE` = actually run it. Add `BUFFERS` to count pages.
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id FROM employees WHERE id = 2000;
+```
+
+#### Benchmarks (local, PostgreSQL 18.4, warm cache)
+
+| Query | Plan | Heap fetches / pages | Time |
+| ----- | ---- | -------------------- | ---- |
+| `SELECT * FROM employees WHERE id = 1` (1k) | **Index Scan** `employees_pkey` | index + heap (3 buffers) | ~0.12 ms |
+| `SELECT id FROM employees WHERE id = 2000` (1k, miss) | **Index Only Scan** `employees_pkey` | Heap Fetches: 0 · 2 buffers | 0.028 ms |
+| `SELECT id … WHERE name LIKE '%User %'` (1k) | **Seq Scan** | 6 heap pages, 1000 hits | 0.17 ms |
+| `SELECT * FROM grades` (empty) | **Seq Scan** | 0 pages | 0.007 ms |
+| `SELECT id FROM employees_big WHERE id = 2000` (100k) | **Index Only Scan** | Heap Fetches: 0 · 3 buffers | **0.005 ms** |
+| `SELECT * FROM employees_big WHERE id = 2000` | **Index Scan** | index + heap (3 buffers) | 0.014 ms |
+| `SELECT id … WHERE name = 'User 50000'` | **Index Scan** `employees_big_name` | index + heap | 0.017 ms |
+| `SELECT id … WHERE name LIKE '%User 99999'` | **Seq Scan** | **541 heap pages**, 99 999 filtered | **3.5 ms** |
+| `LIKE 'User 5000%'` default btree | **Seq Scan** | 541 pages | ~12 ms |
+| `LIKE 'User 5000%'` + `varchar_pattern_ops` | **Index Scan** | ~5 buffers, 11 rows | **0.029 ms** |
+
+Sizes (100k rows): heap **4328 kB** (541 pages) · PK index **2208 kB** · name index **3104 kB**. Index is extra storage you rewrite on every `INSERT`/`UPDATE`/`DELETE`.
+
+#### What each plan means
+
+**1. Index Scan — index then heap**
+
+```sql
+SELECT * FROM employees WHERE id = 1;
+-- Index Scan using employees_pkey
+-- Index Cond: (id = 1)
+```
+
+PK btree finds `ctid`, then reads that heap page for `name`. Two I/Os in the diagram above. Needed whenever the index does not store every selected column.
+
+**2. Index Only Scan — stay in the index**
+
+```sql
+SELECT id FROM employees WHERE id = 2000;
+-- Index Only Scan using employees_pkey
+-- Heap Fetches: 0
+```
+
+`id` lives in `employees_pkey`, so no heap row. `id = 2000` on a 1k table is a **miss** (`rows=0`) — still cheap: one index probe, not a table walk.
+
+`Heap Fetches: 0` after `VACUUM`: visibility map marks heap pages all-visible. If vacuum is stale, Postgres still peeks at the heap (`Heap Fetches > 0`) even on an index-only plan.
+
+**3. Seq Scan — walk the heap**
+
+```sql
+SELECT id FROM employees WHERE name LIKE '%User %';
+-- Seq Scan on employees
+-- Filter: (name ~~ '%User %')
+```
+
+Leading `%` cannot seek in a B-Tree (tree is sorted from the **start** of the key). Engine reads every heap page and applies the filter. Same plan **before and after** `CREATE INDEX employees_name`. Index does not help.
+
+Empty `grades`: `SELECT *` has no `WHERE`. Index on `name` unused. Seq Scan of zero pages.
+
+**4. Equality on a secondary index still hits the heap**
+
+```sql
+CREATE INDEX employees_name ON employees(name);
+
+SELECT id FROM employees WHERE name = 'User 500';
+-- Index Scan using employees_name   -- not Index Only
+```
+
+Name index stores `(name → ctid)`, not `id`. Lookup name, then heap-fetch the row to return `id`. Covering index (`INCLUDE (id)`) can turn this into Index Only Scan.
+
+**5. Prefix `LIKE` needs the right opclass**
+
+Default btree on `varchar` (non-C collation) supports `=`, `<`, `>`. It does **not** support `LIKE 'User 5%'`. Planner Seq Scans even at 100k rows.
+
+```sql
+CREATE INDEX employees_name_pattern ON employees (name varchar_pattern_ops);
+
+-- now:
+-- Index Cond: (name ~>=~ 'User 5000' AND name ~<~ 'User 5001')
+-- Filter: (name ~~ 'User 5000%')
+```
+
+Range on the index, then `~~` filter. Leading-wildcard `LIKE '%User %'` still Seq Scan.
+
+#### When to create an index
+
+Create for:
+
+- Equality / range on a selective column (`WHERE id =`, `WHERE email =`, `WHERE created_at >`)
+- Join keys and `ORDER BY` that match the index order
+- Prefix `LIKE 'foo%'` / `LIKE 'foo_'` **with** `varchar_pattern_ops` (or `C` collation)
+
+Skip / waste:
+
+- Tiny tables (1k rows, a few pages) — Seq Scan already cheap
+- `SELECT *` with no filter
+- Leading-wildcard `LIKE '%…%'` (use `pg_trgm` GIN if you must)
+- Low-selectivity columns (`boolean`, status with 2 values) — index lookup + random heap I/O can lose to Seq Scan
+
+#### Read vs write cost
+
+| | Heap only | Heap + indexes |
+| --- | --- | --- |
+| `INSERT` | append tuple to a heap page | heap **plus** a leaf insert in every btree |
+| Point `SELECT` | scan all heap pages | few index pages + maybe 1 heap page |
+| `UPDATE` of indexed column | heap + new tuple (MVCC) | also update / insert index entries |
+
+Indexes speed **selective reads**. They slow **writes** and consume RAM/disk. Measure with `EXPLAIN (ANALYZE, BUFFERS)` on realistic row counts, not 1k toy tables.
 
 ---
 
