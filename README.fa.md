@@ -835,6 +835,547 @@ CREATE INDEX employees_name_pattern ON employees (name varchar_pattern_ops);
 
 ایندکس **خواندن selective** را تند می‌کند. **نوشتن** را کند می‌کند و RAM/دیسک می‌خورد. با `EXPLAIN (ANALYZE, BUFFERS)` روی تعداد سطر واقعی بسنج، نه جدول اسباب‌بازی ۱k.
 
+### 04.2 — Key vs Non-Key Columns in Database Indexing
+
+- **Status:** `[ ]`
+- **Summary:** Understand the difference between index key columns and non-key (included) columns, and how they affect query performance.
+- **Focus:** B-Tree structure, `INCLUDE`, covering indexes, heap lookups, index size, and read/write trade-offs.
+- **Database:** PostgreSQL 18.4
+
+#### 1. Understanding key and non-key columns
+
+When creating a database index, we need to distinguish between two concepts:
+
+**Key columns** are used to search, filter, and organize entries in the index.
+
+**Non-key columns**, when supported through an `INCLUDE` clause, are stored in the index to provide additional data without becoming part of its search or ordering key.
+
+For example, consider this table:
+
+```sql
+CREATE TABLE students (
+    id         serial PRIMARY KEY,
+    firstname  varchar(255),
+    lastname   varchar(255),
+    middlename varchar(255),
+    address    varchar(255),
+    bio        text,
+    dob        date,
+    id1        integer,
+    id2        integer,
+    id3        integer,
+    id4        integer,
+    id5        integer,
+    id6        integer
+);
+```
+
+The primary key automatically creates a unique B-Tree index on `id`.
+
+Verify it:
+
+```sql
+\d students
+```
+
+Initially, you should see an index similar to:
+
+```text
+Indexes:
+    "students_pkey" PRIMARY KEY, btree (id)
+```
+
+This means PostgreSQL has created an index for `id`, but it has not automatically indexed the other columns.
+
+For example:
+
+```sql
+SELECT *
+FROM students
+WHERE id = 10;
+```
+
+PostgreSQL can use the primary key index to locate the row.
+
+However:
+
+```sql
+SELECT *
+FROM students
+WHERE lastname = 'Smith';
+```
+
+There is no index on `lastname`, so PostgreSQL will generally need a sequential scan unless another suitable index exists.
+
+---
+
+#### 2. Key columns: the search structure
+
+Let's create an index on `lastname`.
+
+```sql
+CREATE INDEX idx_students_lastname
+ON students(lastname);
+```
+
+The index's key column is `lastname`.
+
+Conceptually, its entries look like this:
+
+```text
+idx_students_lastname
+
+Key: lastname
+       |
+       v
++------------------+
+| Anderson → CTID  |
+| Brown    → CTID  |
+| Davis    → CTID  |
+| Smith    → CTID  |
+| Wilson   → CTID  |
++------------------+
+```
+
+The actual B-Tree is organized into pages, not one simple list. This diagram illustrates the concept.
+
+Now execute:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT *
+FROM students
+WHERE lastname = 'Smith';
+```
+
+If the table is sufficiently large and the planner considers the index efficient, you may see:
+
+```text
+Index Scan using idx_students_lastname on students
+  Index Cond: (lastname = 'Smith')
+```
+
+The process is:
+
+1. Search the B-Tree for `lastname = 'Smith'`.
+2. Find the matching index entry.
+3. Obtain the heap tuple location.
+4. Read the heap to retrieve the requested columns.
+
+Why does PostgreSQL visit the heap?
+
+Because the query requests `*`, including columns such as `firstname`, `address`, and `bio`.
+
+The index on `lastname` does not contain all those values.
+
+**Key columns help PostgreSQL find matching rows. They do not automatically make every column available without accessing the heap.**
+
+---
+
+#### 3. Non-key columns: the `INCLUDE` clause
+
+PostgreSQL supports non-key index columns through `INCLUDE`.
+
+Suppose this query is common in your application:
+
+```sql
+SELECT firstname, lastname
+FROM students
+WHERE lastname = 'Smith';
+```
+
+We can create a covering index:
+
+```sql
+CREATE INDEX idx_students_lastname_covering
+ON students(lastname)
+INCLUDE (firstname);
+```
+
+Here:
+
+- `lastname` is the **key column**.
+- `firstname` is the **non-key included column**.
+
+Conceptually:
+
+```text
+idx_students_lastname_covering
+
+Key column: lastname
+Included column: firstname
+
++-----------------------------+
+| lastname | firstname        |
++-----------------------------+
+| Brown    | Michael          |
+| Davis    | Sarah             |
+| Smith    | John              |
+| Smith    | Alice             |
+| Wilson   | David             |
++-----------------------------+
+```
+
+The index is organized by `lastname`. The included `firstname` values are stored to make them available when the query needs them.
+
+Now run:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT firstname, lastname
+FROM students
+WHERE lastname = 'Smith';
+```
+
+PostgreSQL may choose:
+
+```text
+Index Only Scan using idx_students_lastname_covering on students
+  Index Cond: (lastname = 'Smith')
+```
+
+If the relevant heap pages are marked all-visible in PostgreSQL's visibility map, you may also see:
+
+```text
+Heap Fetches: 0
+```
+
+This means PostgreSQL can return the requested columns without fetching the heap rows.
+
+**Important:** `INCLUDE` makes an index-only plan possible; it does not guarantee that PostgreSQL will choose that plan or that every heap fetch will be avoided.
+
+---
+
+#### 4. Key columns vs non-key columns
+
+Consider these two indexes:
+
+```sql
+CREATE INDEX idx_students_lastname_firstname
+ON students(lastname, firstname);
+```
+
+And:
+
+```sql
+CREATE INDEX idx_students_lastname_include
+ON students(lastname)
+INCLUDE (firstname);
+```
+
+They are not equivalent.
+
+| Feature | `(lastname, firstname)` | `(lastname) INCLUDE (firstname)` |
+|---|---|---|
+| `lastname` is a key | Yes | Yes |
+| `firstname` is a key | Yes | No |
+| `firstname` determines index ordering | Yes, after `lastname` | No |
+| Can search by `lastname` | Yes | Yes |
+| Can search efficiently by `lastname` and `firstname` together | Yes | The included column does not provide a search key |
+| Can potentially cover a query selecting both columns | Yes | Yes |
+| Additional storage | Yes | Yes |
+| Additional write and maintenance cost | Yes | Yes |
+
+The most important difference is how PostgreSQL uses the columns to navigate and order index entries.
+
+With:
+
+```sql
+ON students(lastname, firstname)
+```
+
+both columns participate in the index key.
+
+With:
+
+```sql
+ON students(lastname)
+INCLUDE (firstname)
+```
+
+only `lastname` participates in the key. `firstname` is stored as additional data.
+
+For example, the second index can support:
+
+```sql
+SELECT firstname, lastname
+FROM students
+WHERE lastname = 'Smith';
+```
+
+But it does not provide a B-Tree search key for this query:
+
+```sql
+SELECT firstname, lastname
+FROM students
+WHERE firstname = 'Alice';
+```
+
+PostgreSQL cannot efficiently navigate the index by `firstname` alone because it is an included column, not a key.
+
+---
+
+#### 5. Lab: Create a realistic dataset
+
+Your table has many columns, so let's populate it with sample data and compare the plans.
+
+First, generate 100,000 students:
+
+```sql
+INSERT INTO students (
+    firstname,
+    lastname,
+    middlename,
+    address,
+    bio,
+    dob,
+    id1,
+    id2,
+    id3,
+    id4,
+    id5,
+    id6
+)
+SELECT
+    'First' || i,
+    'Last' || (i % 1000),
+    'Middle' || (i % 100),
+    'Address ' || i,
+    'Biography for student ' || i,
+    DATE '1990-01-01' + (i % 10000),
+    i,
+    i + 1,
+    i + 2,
+    i + 3,
+    i + 4,
+    i + 5
+FROM generate_series(1, 100000) AS series(i);
+```
+
+Update PostgreSQL's statistics:
+
+```sql
+ANALYZE students;
+```
+
+Check the row count:
+
+```sql
+SELECT COUNT(*)
+FROM students;
+```
+
+Expected result:
+
+```text
+ count
+--------
+ 100000
+```
+
+Now test the query without a `lastname` index:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT firstname, lastname
+FROM students
+WHERE lastname = 'Last500';
+```
+
+Without a suitable index, PostgreSQL will generally perform a sequential scan.
+
+Create a key-only index:
+
+```sql
+CREATE INDEX idx_students_lastname
+ON students(lastname);
+```
+
+Run the query again:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT firstname, lastname
+FROM students
+WHERE lastname = 'Last500';
+```
+
+The planner may use an `Index Scan`. It can search by `lastname`, but must visit the heap to retrieve `firstname`.
+
+Now create a covering index:
+
+```sql
+CREATE INDEX idx_students_lastname_covering
+ON students(lastname)
+INCLUDE (firstname);
+```
+
+Run the same query:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT firstname, lastname
+FROM students
+WHERE lastname = 'Last500';
+```
+
+The planner may choose an `Index Only Scan`.
+
+Compare the execution plans and look for:
+
+```text
+Index Scan
+```
+
+versus:
+
+```text
+Index Only Scan
+Heap Fetches: 0
+```
+
+The exact plan and execution time depend on table statistics, cache state, visibility information, and the cost estimates.
+
+**Lab note:** Both indexes exist during the final test. PostgreSQL may choose either one. For a cleaner comparison, drop the redundant index before measuring each design independently.
+
+---
+
+#### 6. When should you use `INCLUDE`?
+
+Consider a common application query:
+
+```sql
+SELECT firstname, lastname
+FROM students
+WHERE lastname = 'Last500';
+```
+
+A suitable index is:
+
+```sql
+CREATE INDEX idx_students_lastname_covering
+ON students(lastname)
+INCLUDE (firstname);
+```
+
+But suppose you need the student's address, biography, and date of birth:
+
+```sql
+SELECT *
+FROM students
+WHERE lastname = 'Last500';
+```
+
+Including every column would create a much larger index:
+
+```sql
+-- Usually not recommended
+CREATE INDEX idx_students_cover_everything
+ON students(lastname)
+INCLUDE (
+    firstname,
+    middlename,
+    address,
+    bio,
+    dob,
+    id1,
+    id2,
+    id3,
+    id4,
+    id5,
+    id6
+);
+```
+
+This is especially undesirable when including large values such as `bio`.
+
+A larger index requires more storage and can increase write and maintenance costs. PostgreSQL also has limits on index tuple sizes, so sufficiently large included values can cause index creation or subsequent writes to fail.
+
+A better approach is to include only the additional columns that are useful for frequent queries.
+
+For example:
+
+```sql
+CREATE INDEX idx_students_lastname_firstname
+ON students(lastname)
+INCLUDE (firstname);
+```
+
+This can be appropriate if your application frequently filters by `lastname` and returns only `firstname` and `lastname`.
+
+---
+
+#### 7. Important trade-offs
+
+| Consideration | Key column | Included column |
+|---|---|---|
+| Used for index search | Yes | No |
+| Participates in key ordering | Yes | No |
+| Can help satisfy a query without a heap lookup | Yes | Yes |
+| Increases index size | Yes | Yes |
+| Adds write and maintenance cost | Yes | Yes |
+| Should be added automatically to every index | No | No |
+
+Remember that PostgreSQL indexes have a cost.
+
+When you execute:
+
+```sql
+INSERT INTO students (...);
+```
+
+PostgreSQL must maintain the relevant indexes.
+
+When you update an indexed value, index maintenance may also be necessary. Updating an included column can prevent a HOT update when that column belongs to an index, and can require index maintenance.
+
+Therefore, do not create covering indexes for every possible query.
+
+Instead, identify the queries that matter most, inspect their execution plans, and add included columns only when the expected read benefits justify the additional cost.
+
+---
+
+#### 8. Practical rules
+
+**Use key columns when:**
+
+- You filter with `WHERE`.
+- You need an index to support joins.
+- You need index ordering for a query.
+- You need a composite index for frequently used filtering conditions.
+
+**Consider `INCLUDE` when:**
+
+- You already have an appropriate search key.
+- Your query frequently selects a small number of additional columns.
+- You want PostgreSQL to have the option of using an Index Only Scan.
+- The additional columns are relatively small and do not make the index unnecessarily large.
+
+**Avoid unnecessary included columns when:**
+
+- Queries rarely use those columns.
+- The columns are large, especially `text` or large variable-length values.
+- The table receives frequent writes.
+- The additional index size outweighs the potential benefit.
+
+### Final takeaway
+
+```sql
+-- Both columns are keys
+CREATE INDEX idx1
+ON students(lastname, firstname);
+
+-- lastname is the key; firstname is included
+CREATE INDEX idx2
+ON students(lastname)
+INCLUDE (firstname);
+```
+
+The distinction is:
+
+**Key columns determine how PostgreSQL searches and orders index entries. Non-key included columns provide additional data that may allow PostgreSQL to answer a query directly from the index.**
+
+Use `INCLUDE` to optimize specific, frequently executed queries—not simply to make indexes contain more columns.
+
 ---
 
 ### 05 — B-Tree در برابر B+Tree
