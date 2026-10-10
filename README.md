@@ -49,6 +49,13 @@ Marks: `[ ]` not started · `[~]` in progress · `[x]` done
 - [02 — ACID](#02--acid)
 - [03 — Understanding Database Internals](#03--understanding-database-internals)
 - [04 — Database Indexing](#04--database-indexing)
+  - [04.1 — Key vs Non-Key Columns (Lesson 005)](#041--key-vs-non-key-columns-lesson-005)
+  - [04.2 — Combining Indexes (Lesson 006)](#042--combining-indexes-lesson-006)
+  - [04.3 — How the Optimizer Chooses an Index (Lesson 007)](#043--how-the-optimizer-chooses-an-index-lesson-007)
+  - [04.4 — Bitmap Scan vs Index Scan vs Table Scan (Lesson 008)](#044--bitmap-scan-vs-index-scan-vs-table-scan-lesson-008)
+  - [04.5 — Create Index Concurrently (Lesson 009)](#045--create-index-concurrently-lesson-009)
+  - [04.6 — Bloom Filters (Lesson 010)](#046--bloom-filters-lesson-010)
+  - [04.7 — Working with Billion-Row Tables (Lesson 011)](#047--working-with-billion-row-tables-lesson-011)
 - [05 — B-Tree vs B+Tree](#05--b-tree-vs-btree-in-production-database-systems)
 
 ### Part II — Scale & Distribution
@@ -899,6 +906,327 @@ A Seq Scan is not automatically a problem: it can be the cheapest plan for a sma
 **Remember:** Design for the query → measure the plan → add the smallest useful index → measure again.
 
 **Further reading:** PostgreSQL documentation on [index types](https://www.postgresql.org/docs/18/indexes-types.html), [multicolumn indexes](https://www.postgresql.org/docs/18/indexes-multicolumn.html), [covering indexes](https://www.postgresql.org/docs/18/indexes-index-only-scans.html), [partial indexes](https://www.postgresql.org/docs/18/indexes-partial.html), and [expression indexes](https://www.postgresql.org/docs/18/indexes-expressional.html).
+
+---
+
+### 04.1 — Key vs Non-Key Columns (Lesson 005)
+
+**Goal:** Decide which columns should guide a search and which should only supply output values.
+
+A key column is part of the index's search order. A non-key column added with `INCLUDE` is stored as payload. For `WHERE grade >= 90 ORDER BY grade DESC`, `grade` should be a key; `id` can be included if the query only returns `id` and `grade`.
+
+**Practice setup:** Run the following lessons in order in one PostgreSQL practice session with autocommit enabled. The temporary tables disappear when you disconnect. Lesson 009 uses a separate, ordinary practice table because temporary tables cannot demonstrate concurrent writes from another session.
+
+```sql
+CREATE TEMP TABLE indexing_students (
+  id integer PRIMARY KEY,
+  grade integer NOT NULL,
+  name text NOT NULL,
+  notes text NOT NULL
+);
+
+INSERT INTO indexing_students
+SELECT n, n % 101, 'Student ' || n, repeat('Practice notes. ', 20)
+FROM generate_series(1, 100000) AS g(n);
+
+CREATE INDEX indexing_students_grade_idx
+ON indexing_students (grade);
+
+VACUUM (ANALYZE) indexing_students;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, grade FROM indexing_students
+WHERE grade >= 90
+ORDER BY grade DESC
+LIMIT 100;
+```
+
+The grade index can support the filter and ordering, but PostgreSQL must fetch `id` from the heap. The primary-key index does not automatically add `id` to every other index.
+
+Replace the index and measure again:
+
+```sql
+DROP INDEX indexing_students_grade_idx;
+
+CREATE INDEX indexing_students_grade_cover_idx
+ON indexing_students (grade) INCLUDE (id);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, grade FROM indexing_students
+WHERE grade >= 90
+ORDER BY grade DESC
+LIMIT 100;
+```
+
+An index-only scan is possible because both required columns are available. Check `Heap Fetches`, buffers, and execution time. A backward B-Tree scan can provide descending order; a separate descending index is unnecessary for this single-column sort.
+
+**Check:** Would `INCLUDE (id)` also cover `SELECT name, grade`? **No.** `name` is absent, so heap access is still required. Include only values needed by important queries; wider indexes take more space and add write work.
+
+[Reference: covering indexes](https://www.postgresql.org/docs/18/indexes-index-only-scans.html).
+
+---
+
+### 04.2 — Combining Indexes (Lesson 006)
+
+**Goal:** Choose between separate indexes and a composite index for `AND` and `OR` queries.
+
+```sql
+CREATE TEMP TABLE indexing_pairs (
+  id integer PRIMARY KEY,
+  a integer NOT NULL,
+  b integer NOT NULL,
+  payload text NOT NULL
+);
+
+INSERT INTO indexing_pairs
+SELECT n, n % 100, (n / 100) % 100, repeat('Payload ', 20)
+FROM generate_series(1, 100000) AS g(n);
+
+CREATE INDEX indexing_pairs_a_idx ON indexing_pairs (a);
+CREATE INDEX indexing_pairs_b_idx ON indexing_pairs (b);
+ANALYZE indexing_pairs;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE a = 42 AND b = 17;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE a = 42 OR b = 17;
+```
+
+PostgreSQL can build row-location bitmaps from separate indexes. **BitmapAnd** intersects matches; **BitmapOr** combines them. The planner can also choose one index and filter, or scan the table. Two available indexes do not mean both must be used, and combining them does not imply parallel execution.
+
+Now replace the index on `a` with a composite index; keep the index on `b`:
+
+```sql
+DROP INDEX indexing_pairs_a_idx;
+CREATE INDEX indexing_pairs_ab_idx ON indexing_pairs (a, b);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE a = 42 AND b = 17;
+```
+
+| Query pattern | Design to consider |
+| --- | --- |
+| `a = ...` | `(a)` or the leading part of `(a, b)`. |
+| `b = ...` | `(b)`; `(a, b)` may also help in some cases through skip scan. |
+| `a = ... AND b = ...` | `(a, b)` can search the pair directly; separate indexes can be combined. |
+| `a = ... OR b = ...` | Separate searchable paths, such as `(a, b)` plus `(b)`, can allow BitmapOr. |
+
+**Check:** Why keep `(b)` alongside `(a, b)`? It provides a direct path for `b`-only queries. Keep it only if the workload justifies its storage and maintenance cost.
+
+[Reference: combining multiple indexes](https://www.postgresql.org/docs/18/indexes-bitmap-scans.html).
+
+---
+
+### 04.3 — How the Optimizer Chooses an Index (Lesson 007)
+
+**Goal:** Understand why a valid index can be ignored.
+
+The optimizer compares estimated plan costs. It considers table size, matching-row estimates, the columns needed, ordering, `LIMIT`, data distribution, and the expected cost of reading index and heap pages.
+
+| Choice | Why it may be cheaper |
+| --- | --- |
+| One index, then a filter | The first condition already narrows the search to very few rows. |
+| Combined indexes | Their intersection avoids enough heap work to justify scanning both. |
+| Sequential scan | Most rows are needed, so walking the table avoids repeated index-to-heap lookups. |
+
+Continue with the table from Lesson 006:
+
+```sql
+-- A primary-key lookup finds at most one row; b can be checked afterward.
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE id = 1742 AND b = 17;
+
+-- Every row matches: a full table scan is a reasonable choice.
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE a >= 0;
+
+-- Refresh sampled statistics after substantial data changes.
+ANALYZE indexing_pairs;
+```
+
+Compare estimated `rows` with `actual rows`. A large gap is a reason to investigate statistics or correlations between columns. `ANALYZE` updates planner statistics; `VACUUM` handles dead tuples and visibility maintenance. `VACUUM FULL` rewrites and locks the table, so it is not a routine fix for a poor plan.
+
+**Check:** Is an index on a column with two distinct values always useless? **No.** One value may be rare enough for an index to help. The distribution and the actual query matter more than the count of distinct values alone.
+
+[Reference: planner statistics](https://www.postgresql.org/docs/18/planner-stats.html).
+
+---
+
+### 04.4 — Bitmap Scan vs Index Scan vs Table Scan (Lesson 008)
+
+**Goal:** Recognize how PostgreSQL balances scattered heap reads against reading the entire table.
+
+An **Index Scan** follows matching index entries to heap tuples as it proceeds. A **Bitmap Index Scan** first collects matching locations; a **Bitmap Heap Scan** then visits the selected heap pages in physical order. A **Seq Scan** walks the table directly.
+
+```sql
+-- A single row: usually an Index Scan.
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE id = 50000;
+
+-- Multiple matches across the table: a bitmap plan is a candidate.
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE a = 42;
+
+-- Most rows: usually a Seq Scan.
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT payload FROM indexing_pairs WHERE id > 100;
+```
+
+These are candidates, not guaranteed plans. There is no universal percentage at which PostgreSQL must switch scan types.
+
+Read a bitmap plan from the inner nodes outward:
+
+```text
+Bitmap Heap Scan
+  Recheck Cond: ...
+  -> BitmapAnd / BitmapOr       (only when combining scans)
+       -> Bitmap Index Scan
+       -> Bitmap Index Scan
+```
+
+- **Exact heap blocks:** The bitmap retains matching tuple locations within a page.
+- **Lossy heap blocks:** Under memory pressure, it may keep only page-level information. Tuples on those pages must be rechecked.
+- **Rows Removed by Index Recheck:** Candidates rejected when the index condition is checked again. Some index methods also require rechecks.
+- **Ordering:** Bitmap processing loses index order. `ORDER BY` may need an additional sort.
+
+**Check:** Why might `ORDER BY ... LIMIT 10` favor an ordinary index scan? A matching B-Tree can return the first rows in order and stop early, avoiding bitmap construction and sorting.
+
+[Reference: interpreting EXPLAIN](https://www.postgresql.org/docs/18/using-explain.html).
+
+---
+
+### 04.5 — Create Index Concurrently (Lesson 009)
+
+**Goal:** Add an index while allowing application writes to continue.
+
+A normal `CREATE INDEX` permits reads but blocks writes to its table during the build. `CREATE INDEX CONCURRENTLY` permits ordinary reads and writes, at the cost of extra scanning and waiting for relevant transactions.
+
+Use an **ordinary table in a disposable practice database**, not the temporary tables above. Run each command separately with autocommit enabled:
+
+```sql
+CREATE TABLE indexing_live_demo (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email text NOT NULL
+);
+
+INSERT INTO indexing_live_demo (email)
+SELECT 'user' || n || '@example.com'
+FROM generate_series(1, 100000) AS g(n);
+
+CREATE INDEX CONCURRENTLY indexing_live_demo_email_idx
+ON indexing_live_demo (email);
+```
+
+To observe concurrent writes, try an insert from a second connection while the build is running. This small build may finish too quickly to observe; a larger practice dataset makes the overlap easier to see. In the second connection, use:
+
+```sql
+INSERT INTO indexing_live_demo (email) VALUES ('new-user@example.com');
+```
+
+Before treating the index as ready, inspect it:
+
+```sql
+SELECT c.relname AS index_name, i.indisready, i.indisvalid
+FROM pg_index AS i
+JOIN pg_class AS c ON c.oid = i.indexrelid
+WHERE i.indexrelid = 'indexing_live_demo_email_idx'::regclass;
+
+SELECT pid, phase, blocks_done, blocks_total
+FROM pg_stat_progress_create_index
+WHERE relid = 'indexing_live_demo'::regclass;
+```
+
+A successful completed build has `indisvalid = true`; the progress view has no row after completion. Important limits:
+
+- It cannot run inside `BEGIN` / `COMMIT`, including migrations automatically wrapped in a transaction.
+- Long-running transactions can delay completion. Only one concurrent index build can run on a given table at a time.
+- It still consumes CPU, I/O, and storage, so application queries may slow down during the build.
+- Failure can leave an invalid index that the planner cannot use but that may still add write overhead. Diagnose the cause, then drop the invalid index and retry. Do not rely on `IF NOT EXISTS` to repair it.
+
+**Check:** Does “concurrently” mean “instant and free of locks”? **No.** It avoids the write-blocking table lock of a normal build, but still takes other locks, does work, and may wait.
+
+[Reference: CREATE INDEX and concurrent-build caveats](https://www.postgresql.org/docs/18/sql-createindex.html).
+
+---
+
+### 04.6 — Bloom Filters (Lesson 010)
+
+**Goal:** Avoid expensive lookups when an item is definitely absent.
+
+A Bloom filter represents a set using a bit array and several hash functions. It stores membership information rather than the original values.
+
+1. **Insert:** Hash the item to several positions and set those bits to 1.
+2. **Check:** Hash the candidate using the same functions.
+3. **Any bit is 0:** The candidate is definitely absent from the represented set.
+4. **All bits are 1:** The candidate may be present; perform the authoritative lookup.
+
+For example, suppose `Ali` sets positions 2, 5, and 9. A name checking positions 2, 4, and 9 is absent if bit 4 is still 0. Another name may map to three bits already set by other names, producing a **false positive**.
+
+```text
+Username request
+  → Bloom filter says absent → skip the database lookup
+  → Bloom filter says maybe  → query the database to confirm
+```
+
+**Correctness matters:** The “no false negatives” guarantee applies only to a correctly maintained filter containing every item in the set. If a database insert is missing from the filter, an “absent” result is unsafe. Coordinate updates and rebuilds; when coverage is uncertain, fall back to the database. A unique database constraint remains responsible for enforcing username uniqueness.
+
+More items in a fixed-size filter increase false positives. Size it for expected capacity and a target false-positive rate. A standard Bloom filter cannot safely delete an item by clearing its bits because other items may share them; use a suitable variant or rebuild.
+
+**Check:** Can a Bloom filter return a user's profile or confirm that a username is taken? **No.** It only answers “definitely absent” or “possibly present.” PostgreSQL's optional `bloom` index uses Bloom signatures and heap rechecks; it is distinct from an application-side membership filter.
+
+[References: Bloom filter survey](https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf) · [PostgreSQL bloom index](https://www.postgresql.org/docs/18/bloom.html).
+
+---
+
+### 04.7 — Working with Billion-Row Tables (Lesson 011)
+
+**Goal:** Reduce the amount of data a query processes before adding infrastructure.
+
+A billion rows is not, by itself, a reason to shard. Row width, query patterns, write rate, working-set size, maintenance, and hardware determine the pressure on the system.
+
+| Approach | What it changes | Main trade-off |
+| --- | --- | --- |
+| Indexing | Narrows searches to matching entries and rows. | Extra storage and write work. |
+| Partitioning | Splits one logical table; pruning can skip irrelevant partitions. | Queries need useful partition-key conditions; more objects to manage. |
+| Sharding | Distributes data and load across database hosts. | Routing, cross-shard queries, transactions, and rebalancing become harder. |
+| Parallel processing | Divides scanning or computation among workers. | More resources; useful for large analytics, not a substitute for selective lookups. |
+| Retention / summaries | Removes obsolete data or stores reusable aggregate results. | Must preserve business requirements and manage freshness. |
+
+**Example: a social-following table.** A separate row per relationship supports uniqueness, reverse lookups, and pagination. Storing every follower in one growing JSON array can create a large, frequently rewritten row and contention; fewer rows do not automatically mean a more scalable design.
+
+For a large practice table, match the index to the query and paginate by a stable key:
+
+```sql
+CREATE TEMP TABLE indexing_follows (
+  follower_id bigint NOT NULL,
+  followed_id bigint NOT NULL,
+  PRIMARY KEY (follower_id, followed_id)
+);
+
+INSERT INTO indexing_follows
+SELECT follower, followed
+FROM generate_series(1, 1000) AS f(follower)
+CROSS JOIN generate_series(1, 100) AS t(followed);
+
+CREATE INDEX indexing_follows_reverse_idx
+ON indexing_follows (followed_id, follower_id);
+ANALYZE indexing_follows;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT follower_id FROM indexing_follows
+WHERE followed_id = 42 AND follower_id > 500
+ORDER BY follower_id
+LIMIT 50;
+```
+
+`500` is the last follower ID from the previous page. The reverse index matches the equality condition, cursor range, and sort order. This **keyset pagination** avoids walking an ever-growing `OFFSET`. The small dataset tests the query shape; it does not demonstrate billion-row performance or guarantee a fixed snapshot across page requests.
+
+**Practical order:** Measure slow queries → improve indexes and result sizes → consider retention and partition pruning → shard when measured capacity or distribution requirements justify it. For time partitioning, include a time condition that lets PostgreSQL prune partitions; partitioning without pruning may still read many partitions.
+
+**Check:** Will adding more workers make a one-row lookup efficient if every worker still scans a large part of the table? **No.** Reducing the searched data is usually the first improvement for that workload.
+
+[Reference: PostgreSQL partitioning and pruning](https://www.postgresql.org/docs/18/ddl-partitioning.html). Continue with Chapters 06 and 07 for partitioning and sharding in more detail.
 
 ---
 

@@ -67,9 +67,9 @@ function rewriteNumberedAnchors(md) {
   })
 }
 
-/** Stable chapter heading IDs so TOC matches (em dash breaks VitePress slugs). */
+/** Stable chapter and lesson IDs so GitHub TOC links also work in VitePress. */
 function addChapterHeadingIds(md) {
-  return md.replace(/^### (\d+)\s+[—–-]\s+(.+)$/gm, (_, num, title) => {
+  return md.replace(/^### (\d+(?:\.\d+)?)\s+[—–-]\s+(.+)$/gm, (_, num, title) => {
     const slug = title
       .toLowerCase()
       .normalize('NFC')
@@ -79,7 +79,8 @@ function addChapterHeadingIds(md) {
       .trim()
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
-    return `### ${num} — ${title} {#_${num}-${slug}}`
+    const id = num.replace(/\./g, '')
+    return `### ${num} — ${title} {#_${id}-${slug}}`
   })
 }
 
