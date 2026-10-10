@@ -4,7 +4,7 @@ import { fundamentalsSidebar } from '../scripts/fundamentals-sidebar.mjs'
 
 const repo = 'https://github.com/ardavanshamroshan/database-engineering-fundumentals'
 const base = '/database-engineering-fundumentals/'
-const chapters = fundamentalsSidebar(
+const chapters = await fundamentalsSidebar(
   readFileSync(new URL('../fundamentals/index.md', import.meta.url), 'utf8'),
 )
 

@@ -1,3 +1,6 @@
+import { createMarkdownRenderer } from 'vitepress'
+import { fileURLToPath } from 'node:url'
+
 const labels = {
   '01': 'Course updates',
   '02': 'ACID',
@@ -34,27 +37,64 @@ const labels = {
   '17': 'Archived lectures',
 }
 
-// Read the generated heading IDs so sidebar links stay aligned with the page.
-export function fundamentalsSidebar(markdown) {
-  const chapters = []
-  const byNumber = new Map()
-  const headings = /^#{3,4} (\d{2}(?:\.\d+)?) — (.+?) \{#([^}]+)\}$/gm
+const sectionLabels = {
+  'what-is-a-transaction': 'Transactions',
+  'lab-prove-atomicity-with-an-unfinished-transaction-postgresql': 'Lab: unfinished transaction',
+  'isolation-levels-in-postgresql-overview': 'Isolation levels',
+  '_1-read-uncommitted-same-as-read-committed-in-postgresql': '1. Read Uncommitted',
+  '_2-read-committed-default': '2. Read Committed',
+  '_3-repeatable-read-snapshot': '3. Repeatable Read',
+  '_4-serializable-ssi': '4. Serializable',
+  'eventual-consistency-in-database-systems': 'Eventual consistency',
+  'how-tables-and-indexes-are-stored-and-found-—-explained-simply': 'Tables and index storage',
+  '_2-lab-compare-a-query-before-and-after-indexing': '2. Lab: before and after indexing',
+}
 
-  for (const [, number, title, anchor] of markdown.matchAll(headings)) {
-    const item = {
-      text: `${number} · ${labels[number] ?? title.replace(/ \(Lesson \d+\)$/, '')}`,
-      link: `/fundamentals/#${anchor}`,
-    }
-    if (!number.includes('.')) {
-      chapters.push(item)
-      byNumber.set(number, item)
+// Use the same Markdown parser as the page, including explicit and duplicate IDs.
+export async function fundamentalsSidebar(markdown) {
+  const renderer = await createMarkdownRenderer(
+    fileURLToPath(new URL('../', import.meta.url)),
+  )
+  const tokens = renderer.parse(markdown, {})
+  const chapters = []
+  const parents = []
+
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]
+    if (token.type !== 'heading_open') continue
+    const level = Number(token.tag.slice(1))
+    const inline = tokens[index + 1]
+    const title = inline.children
+      .filter((child) => child.type === 'text' || child.type === 'code_inline')
+      .map((child) => child.content)
+      .join('')
+      .trim()
+    const number = title.match(/^(\d{2}(?:\.\d+)?) — /)?.[1]
+
+    if (level <= 3) {
+      parents.length = 0
+      if (level !== 3 || !number || number.includes('.')) continue
+    } else if (!parents.length) {
       continue
     }
 
-    const parent = byNumber.get(number.split('.')[0])
-    if (!parent) throw new Error(`Missing parent chapter for ${number}`)
-    parent.collapsed = true
-    ;(parent.items ??= []).push(item)
+    const label = number
+      ? `${number} · ${labels[number] ?? title.replace(/^\d{2}(?:\.\d+)? — /, '').replace(/ \(Lesson \d+\)$/, '')}`
+      : sectionLabels[token.attrGet('id')] ?? title
+    // VitePress renders sidebar labels as HTML, so escape literal heading text.
+    const item = {
+      text: label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+      link: `/fundamentals/#${token.attrGet('id')}`,
+    }
+    while (parents.length && parents.at(-1).level >= level) parents.pop()
+    if (parents.length) {
+      const parent = parents.at(-1).item
+      parent.collapsed = true
+      ;(parent.items ??= []).push(item)
+    } else {
+      chapters.push(item)
+    }
+    parents.push({ level, item })
   }
 
   return chapters

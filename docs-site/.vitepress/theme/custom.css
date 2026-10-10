@@ -329,7 +329,8 @@
 }
 
 .VPSidebarItem.level-1 > .item .text,
-.VPSidebarItem.level-2 > .item .text {
+.VPSidebarItem.level-2 > .item .text,
+.VPSidebarItem.level-3 > .item .text {
   font-size: 0.8125rem;
   font-weight: 400;
   color: var(--vp-c-text-2) !important;
@@ -353,18 +354,21 @@
 }
 
 .VPSidebarItem.level-1 > .item,
-.VPSidebarItem.level-2 > .item {
+.VPSidebarItem.level-2 > .item,
+.VPSidebarItem.level-3 > .item {
   padding-inline-start: 10px;
 }
 
-.VPSidebarItem.level-1 > .items {
+.VPSidebarItem.level-1 > .items,
+.VPSidebarItem.level-2 > .items {
   margin-inline-start: 10px;
   padding-inline-start: 12px;
   border-inline-start: 1px solid var(--vp-c-divider);
 }
 
 .VPSidebarItem.level-1 > .item > .indicator,
-.VPSidebarItem.level-2 > .item > .indicator {
+.VPSidebarItem.level-2 > .item > .indicator,
+.VPSidebarItem.level-3 > .item > .indicator {
   top: 5px;
   bottom: 5px;
   left: 0;
@@ -374,7 +378,8 @@
 }
 
 .VPSidebarItem.level-1.is-active > .item > .indicator,
-.VPSidebarItem.level-2.is-active > .item > .indicator {
+.VPSidebarItem.level-2.is-active > .item > .indicator,
+.VPSidebarItem.level-3.is-active > .item > .indicator {
   background-color: var(--color-brand);
 }
 
@@ -1325,4 +1330,20 @@ body {
   font-size: 0.8125rem;
   color: var(--vp-c-text-3);
   font-weight: 400;
+}
+
+/* Make each section a full-row target with a visible keyboard focus. */
+.VPSidebarItem .link {
+  align-self: stretch;
+}
+
+.VPSidebarItem .link:focus-visible,
+.VPSidebarItem .caret:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.VPSidebarItem.is-active > .item > .link > .text {
+  color: var(--vp-c-brand-1) !important;
+  font-weight: 600;
 }
