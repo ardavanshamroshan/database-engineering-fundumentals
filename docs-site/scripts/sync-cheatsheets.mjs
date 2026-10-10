@@ -69,7 +69,7 @@ function rewriteNumberedAnchors(md) {
 
 /** Stable chapter and lesson IDs so GitHub TOC links also work in VitePress. */
 function addChapterHeadingIds(md) {
-  return md.replace(/^### (\d+(?:\.\d+)?)\s+[—–-]\s+(.+)$/gm, (_, num, title) => {
+  return md.replace(/^(#{3,4}) (\d+(?:\.\d+)?)\s+[—–-]\s+(.+)$/gm, (_, heading, num, title) => {
     const slug = title
       .toLowerCase()
       .normalize('NFC')
@@ -80,7 +80,7 @@ function addChapterHeadingIds(md) {
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
     const id = num.replace(/\./g, '')
-    return `### ${num} — ${title} {#_${id}-${slug}}`
+    return `${heading} ${num} — ${title} {#_${id}-${slug}}`
   })
 }
 
@@ -158,7 +158,8 @@ ${body}`
     `---
 title: Fundamentals
 description: Database Engineering Fundamentals study path
-outline: deep
+aside: false
+outline: false
 ---
 
 ${en}`,

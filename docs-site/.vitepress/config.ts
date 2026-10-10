@@ -1,18 +1,27 @@
 import { defineConfig } from 'vitepress'
+import { readFileSync } from 'node:fs'
+import { fundamentalsSidebar } from '../scripts/fundamentals-sidebar.mjs'
 
 const repo = 'https://github.com/ardavanshamroshan/database-engineering-fundumentals'
 const base = '/database-engineering-fundumentals/'
+const chapters = fundamentalsSidebar(
+  readFileSync(new URL('../fundamentals/index.md', import.meta.url), 'utf8'),
+)
 
 const sidebar = [
   {
-    text: 'Start',
-    items: [
-      { text: 'Home', link: '/' },
-      { text: 'Fundamentals', link: '/fundamentals/' },
-    ],
+    text: 'Home',
+    link: '/',
+  },
+  {
+    text: 'Fundamentals',
+    link: '/fundamentals/',
+    collapsed: false,
+    items: chapters,
   },
   {
     text: 'SQL',
+    collapsed: true,
     items: [
       { text: 'PostgreSQL', link: '/sql/postgresql' },
       { text: 'MySQL', link: '/sql/mysql' },
@@ -21,6 +30,7 @@ const sidebar = [
   },
   {
     text: 'NoSQL',
+    collapsed: true,
     items: [
       { text: 'Redis', link: '/nosql/redis' },
       { text: 'MongoDB', link: '/nosql/mongodb' },
@@ -62,13 +72,14 @@ export default defineConfig({
       {
         text: 'Cheatsheets',
         items: [
-          { text: 'PostgreSQL', link: '/sql/postgresql' },
-          { text: 'MySQL', link: '/sql/mysql' },
-          { text: 'SQLite', link: '/sql/sqlite' },
-          { text: 'Redis', link: '/nosql/redis' },
-          { text: 'MongoDB', link: '/nosql/mongodb' },
-          { text: 'Cassandra', link: '/nosql/cassandra' },
-          { text: 'ScyllaDB', link: '/nosql/scylladb' },
+          {
+            text: 'SQL',
+            items: sidebar[2].items,
+          },
+          {
+            text: 'NoSQL',
+            items: sidebar[3].items,
+          },
         ],
       },
       { text: 'GitHub', link: repo },

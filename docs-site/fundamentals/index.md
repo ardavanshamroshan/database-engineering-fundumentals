@@ -1,7 +1,8 @@
 ---
 title: Fundamentals
 description: Database Engineering Fundamentals study path
-outline: deep
+aside: false
+outline: false
 ---
 
 # Database Engineering Fundamentals
@@ -51,23 +52,23 @@ Marks: `[ ]` not started · `[~]` in progress · `[x]` done
 - [02 — ACID](#_02-acid)
 - [03 — Understanding Database Internals](#_03-understanding-database-internals)
 - [04 — Database Indexing](#_04-database-indexing)
-  - [04.1 — Key vs Non-Key Columns (Lesson 005)](#_041-key-vs-non-key-columns-lesson-005)
-  - [04.2 — Combining Indexes (Lesson 006)](#_042-combining-indexes-lesson-006)
-  - [04.3 — How the Optimizer Chooses an Index (Lesson 007)](#_043-how-the-optimizer-chooses-an-index-lesson-007)
-  - [04.4 — Bitmap Scan vs Index Scan vs Table Scan (Lesson 008)](#_044-bitmap-scan-vs-index-scan-vs-table-scan-lesson-008)
-  - [04.5 — Create Index Concurrently (Lesson 009)](#_045-create-index-concurrently-lesson-009)
-  - [04.6 — Bloom Filters (Lesson 010)](#_046-bloom-filters-lesson-010)
-  - [04.7 — Working with Billion-Row Tables (Lesson 011)](#_047-working-with-billion-row-tables-lesson-011)
+  - [04.1 — Key vs Non-Key Columns](#_041-key-vs-non-key-columns-lesson-005)
+  - [04.2 — Combining Indexes](#_042-combining-indexes-lesson-006)
+  - [04.3 — How the Optimizer Chooses an Index](#_043-how-the-optimizer-chooses-an-index-lesson-007)
+  - [04.4 — Bitmap Scan vs Index Scan vs Table Scan](#_044-bitmap-scan-vs-index-scan-vs-table-scan-lesson-008)
+  - [04.5 — Create Index Concurrently](#_045-create-index-concurrently-lesson-009)
+  - [04.6 — Bloom Filters](#_046-bloom-filters-lesson-010)
+  - [04.7 — Working with Billion-Row Tables](#_047-working-with-billion-row-tables-lesson-011)
 - [05 — B-Tree vs B+Tree](#_05-b-tree-vs-btree-in-production-database-systems)
-  - [05.1 — Introduction and Learning Path (Lesson 001)](#_051-introduction-and-learning-path-lesson-001)
-  - [05.2 — Full Table Scans (Lesson 002)](#_052-full-table-scans-lesson-002)
-  - [05.3 — The Original B-Tree (Lesson 003)](#_053-the-original-b-tree-lesson-003)
-  - [05.4 — How B-Trees Improve Performance (Lesson 004)](#_054-how-b-trees-improve-performance-lesson-004)
-  - [05.5 — Limitations of the Classic B-Tree (Lesson 005)](#_055-limitations-of-the-classic-b-tree-lesson-005)
-  - [05.6 — B+Tree Structure and Range Queries (Lesson 006)](#_056-btree-structure-and-range-queries-lesson-006)
-  - [05.7 — Production DBMS Considerations (Lesson 007)](#_057-production-dbms-considerations-lesson-007)
-  - [05.8 — Storage Costs: PostgreSQL vs MySQL InnoDB (Lesson 008)](#_058-storage-costs-postgresql-vs-mysql-innodb-lesson-008)
-  - [05.9 — Summary and Self-Check (Lesson 009)](#_059-summary-and-self-check-lesson-009)
+  - [05.1 — Introduction and Learning Path](#_051-introduction-and-learning-path-lesson-001)
+  - [05.2 — Full Table Scans](#_052-full-table-scans-lesson-002)
+  - [05.3 — The Original B-Tree](#_053-the-original-b-tree-lesson-003)
+  - [05.4 — How B-Trees Improve Performance](#_054-how-b-trees-improve-performance-lesson-004)
+  - [05.5 — Limitations of the Classic B-Tree](#_055-limitations-of-the-classic-b-tree-lesson-005)
+  - [05.6 — B+Tree Structure and Range Queries](#_056-btree-structure-and-range-queries-lesson-006)
+  - [05.7 — Production DBMS Considerations](#_057-production-dbms-considerations-lesson-007)
+  - [05.8 — Storage Costs: PostgreSQL vs MySQL InnoDB](#_058-storage-costs-postgresql-vs-mysql-innodb-lesson-008)
+  - [05.9 — Summary and Self-Check](#_059-summary-and-self-check-lesson-009)
 
 ### Part II — Scale & Distribution
 
@@ -920,7 +921,7 @@ A Seq Scan is not automatically a problem: it can be the cheapest plan for a sma
 
 ---
 
-### 04.1 — Key vs Non-Key Columns (Lesson 005) {#_041-key-vs-non-key-columns-lesson-005}
+#### 04.1 — Key vs Non-Key Columns (Lesson 005) {#_041-key-vs-non-key-columns-lesson-005}
 
 **Goal:** Decide which columns should guide a search and which should only supply output values.
 
@@ -977,7 +978,7 @@ An index-only scan is possible because both required columns are available. Chec
 
 ---
 
-### 04.2 — Combining Indexes (Lesson 006) {#_042-combining-indexes-lesson-006}
+#### 04.2 — Combining Indexes (Lesson 006) {#_042-combining-indexes-lesson-006}
 
 **Goal:** Choose between separate indexes and a composite index for `AND` and `OR` queries.
 
@@ -1029,7 +1030,7 @@ SELECT payload FROM indexing_pairs WHERE a = 42 AND b = 17;
 
 ---
 
-### 04.3 — How the Optimizer Chooses an Index (Lesson 007) {#_043-how-the-optimizer-chooses-an-index-lesson-007}
+#### 04.3 — How the Optimizer Chooses an Index (Lesson 007) {#_043-how-the-optimizer-chooses-an-index-lesson-007}
 
 **Goal:** Understand why a valid index can be ignored.
 
@@ -1064,7 +1065,7 @@ Compare estimated `rows` with `actual rows`. A large gap is a reason to investig
 
 ---
 
-### 04.4 — Bitmap Scan vs Index Scan vs Table Scan (Lesson 008) {#_044-bitmap-scan-vs-index-scan-vs-table-scan-lesson-008}
+#### 04.4 — Bitmap Scan vs Index Scan vs Table Scan (Lesson 008) {#_044-bitmap-scan-vs-index-scan-vs-table-scan-lesson-008}
 
 **Goal:** Recognize how PostgreSQL balances scattered heap reads against reading the entire table.
 
@@ -1107,7 +1108,7 @@ Bitmap Heap Scan
 
 ---
 
-### 04.5 — Create Index Concurrently (Lesson 009) {#_045-create-index-concurrently-lesson-009}
+#### 04.5 — Create Index Concurrently (Lesson 009) {#_045-create-index-concurrently-lesson-009}
 
 **Goal:** Add an index while allowing application writes to continue.
 
@@ -1161,7 +1162,7 @@ A successful completed build has `indisvalid = true`; the progress view has no r
 
 ---
 
-### 04.6 — Bloom Filters (Lesson 010) {#_046-bloom-filters-lesson-010}
+#### 04.6 — Bloom Filters (Lesson 010) {#_046-bloom-filters-lesson-010}
 
 **Goal:** Avoid expensive lookups when an item is definitely absent.
 
@@ -1190,7 +1191,7 @@ More items in a fixed-size filter increase false positives. Size it for expected
 
 ---
 
-### 04.7 — Working with Billion-Row Tables (Lesson 011) {#_047-working-with-billion-row-tables-lesson-011}
+#### 04.7 — Working with Billion-Row Tables (Lesson 011) {#_047-working-with-billion-row-tables-lesson-011}
 
 **Goal:** Reduce the amount of data a query processes before adding infrastructure.
 
@@ -1247,7 +1248,7 @@ LIMIT 50;
 - **Summary:** Understand how balanced trees reduce lookup work and how database storage changes the cost.
 - **Focus:** All nine course lessons: scans, B-Tree structure, B+Tree ranges, caching, and PostgreSQL vs MySQL InnoDB.
 
-### 05.1 — Introduction and Learning Path (Lesson 001) {#_051-introduction-and-learning-path-lesson-001}
+#### 05.1 — Introduction and Learning Path (Lesson 001) {#_051-introduction-and-learning-path-lesson-001}
 
 **Goal:** Connect the tree diagrams to what a database actually reads.
 
@@ -1263,7 +1264,7 @@ A textbook tree illustrates the structure; a production index adds page layouts,
 
 **Check:** Does knowing that an index is a B-Tree tell you where the full row is stored? **No.** You also need to know the storage engine and index layout.
 
-### 05.2 — Full Table Scans (Lesson 002) {#_052-full-table-scans-lesson-002}
+#### 05.2 — Full Table Scans (Lesson 002) {#_052-full-table-scans-lesson-002}
 
 **Goal:** Recognize the problem an index solves and when scanning remains sensible.
 
@@ -1294,7 +1295,7 @@ There is no index yet, so expect a **Seq Scan**. Save the plan, rows removed by 
 
 **Check:** Is a Seq Scan always the slowest choice? **No.** For a small table or a query returning most rows, it may be cheapest.
 
-### 05.3 — The Original B-Tree (Lesson 003) {#_053-the-original-b-tree-lesson-003}
+#### 05.3 — The Original B-Tree (Lesson 003) {#_053-the-original-b-tree-lesson-003}
 
 **Goal:** Understand nodes, keys, balance, and fan-out.
 
@@ -1314,7 +1315,7 @@ Every displayed key has an associated record value or reference in this simplifi
 
 **Check:** Why use many children instead of a binary tree? More branches per page can make the tree shallower, reducing the number of pages on a search path.
 
-### 05.4 — How B-Trees Improve Performance (Lesson 004) {#_054-how-b-trees-improve-performance-lesson-004}
+#### 05.4 — How B-Trees Improve Performance (Lesson 004) {#_054-how-b-trees-improve-performance-lesson-004}
 
 **Goal:** Explain why a lookup can touch far fewer pages than a table scan.
 
@@ -1337,7 +1338,7 @@ Inserting a key into a full page can cause a **page split**. Entries are divided
 
 **Check:** Does an index make writes free? **No.** Inserts must maintain the tree, and splits can require additional page changes.
 
-### 05.5 — Limitations of the Classic B-Tree (Lesson 005) {#_055-limitations-of-the-classic-b-tree-lesson-005}
+#### 05.5 — Limitations of the Classic B-Tree (Lesson 005) {#_055-limitations-of-the-classic-b-tree-lesson-005}
 
 **Goal:** Understand the motivation for separating navigation from record data.
 
@@ -1353,7 +1354,7 @@ The design questions are:
 
 **Check:** Does removing payload from internal pages remove it from the index? **No.** A B+Tree moves record entries to the leaves; it still needs to store them.
 
-### 05.6 — B+Tree Structure and Range Queries (Lesson 006) {#_056-btree-structure-and-range-queries-lesson-006}
+#### 05.6 — B+Tree Structure and Range Queries (Lesson 006) {#_056-btree-structure-and-range-queries-lesson-006}
 
 **Goal:** Follow a range scan from its first matching leaf entry.
 
@@ -1394,7 +1395,7 @@ The first query can use an **Index Only Scan**; inspect `Heap Fetches`. The seco
 
 **Check:** Is a range scan free after finding the first key? **No.** It must read the matching entries and, when necessary, fetch their rows.
 
-### 05.7 — Production DBMS Considerations (Lesson 007) {#_057-production-dbms-considerations-lesson-007}
+#### 05.7 — Production DBMS Considerations (Lesson 007) {#_057-production-dbms-considerations-lesson-007}
 
 **Goal:** Account for pages, cache, and write behavior beyond the diagram.
 
@@ -1421,7 +1422,7 @@ Compare buffer counts and execution time under similar conditions. Do not equate
 
 **Check:** Must the entire index fit in RAM to be useful? **No.** Cached upper levels and frequently accessed leaves can still help substantially.
 
-### 05.8 — Storage Costs: PostgreSQL vs MySQL InnoDB (Lesson 008) {#_058-storage-costs-postgresql-vs-mysql-innodb-lesson-008}
+#### 05.8 — Storage Costs: PostgreSQL vs MySQL InnoDB (Lesson 008) {#_058-storage-costs-postgresql-vs-mysql-innodb-lesson-008}
 
 **Goal:** Understand what an index entry points to in each engine.
 
@@ -1450,7 +1451,7 @@ PostgreSQL has its own update trade-offs: a changed row version may require new 
 
 [References: InnoDB clustered and secondary indexes](https://dev.mysql.com/doc/refman/8.4/en/innodb-index-types.html) · [InnoDB physical index structure](https://dev.mysql.com/doc/refman/8.4/en/innodb-physical-structure.html) · [PostgreSQL HOT updates](https://www.postgresql.org/docs/18/storage-hot.html).
 
-### 05.9 — Summary and Self-Check (Lesson 009) {#_059-summary-and-self-check-lesson-009}
+#### 05.9 — Summary and Self-Check (Lesson 009) {#_059-summary-and-self-check-lesson-009}
 
 **Goal:** Explain the complete path from a query to its result.
 
