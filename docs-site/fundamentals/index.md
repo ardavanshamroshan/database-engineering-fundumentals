@@ -59,6 +59,15 @@ Marks: `[ ]` not started · `[~]` in progress · `[x]` done
   - [04.6 — Bloom Filters (Lesson 010)](#_046-bloom-filters-lesson-010)
   - [04.7 — Working with Billion-Row Tables (Lesson 011)](#_047-working-with-billion-row-tables-lesson-011)
 - [05 — B-Tree vs B+Tree](#_05-b-tree-vs-btree-in-production-database-systems)
+  - [05.1 — Introduction and Learning Path (Lesson 001)](#_051-introduction-and-learning-path-lesson-001)
+  - [05.2 — Full Table Scans (Lesson 002)](#_052-full-table-scans-lesson-002)
+  - [05.3 — The Original B-Tree (Lesson 003)](#_053-the-original-b-tree-lesson-003)
+  - [05.4 — How B-Trees Improve Performance (Lesson 004)](#_054-how-b-trees-improve-performance-lesson-004)
+  - [05.5 — Limitations of the Classic B-Tree (Lesson 005)](#_055-limitations-of-the-classic-b-tree-lesson-005)
+  - [05.6 — B+Tree Structure and Range Queries (Lesson 006)](#_056-btree-structure-and-range-queries-lesson-006)
+  - [05.7 — Production DBMS Considerations (Lesson 007)](#_057-production-dbms-considerations-lesson-007)
+  - [05.8 — Storage Costs: PostgreSQL vs MySQL InnoDB (Lesson 008)](#_058-storage-costs-postgresql-vs-mysql-innodb-lesson-008)
+  - [05.9 — Summary and Self-Check (Lesson 009)](#_059-summary-and-self-check-lesson-009)
 
 ### Part II — Scale & Distribution
 
@@ -1235,9 +1244,237 @@ LIMIT 50;
 ### 05 — B-Tree vs B+Tree in Production Database Systems {#_05-b-tree-vs-btree-in-production-database-systems}
 
 - **Status:** `[ ]`
-- **Summary:** Compare B-Tree and B+Tree in real systems.
-- **Focus:** Tree indexes used by production databases.
-- **Notes:** *(later)*
+- **Summary:** Understand how balanced trees reduce lookup work and how database storage changes the cost.
+- **Focus:** All nine course lessons: scans, B-Tree structure, B+Tree ranges, caching, and PostgreSQL vs MySQL InnoDB.
+
+### 05.1 — Introduction and Learning Path (Lesson 001) {#_051-introduction-and-learning-path-lesson-001}
+
+**Goal:** Connect the tree diagrams to what a database actually reads.
+
+The main question is: **How can we find a few rows without reading the entire table?** Follow the path from full scans to balanced trees, then compare how PostgreSQL and InnoDB retrieve the row after finding an index entry.
+
+Keep three things separate:
+
+- **Search key:** The value being indexed, such as an employee ID.
+- **Child pointer:** A reference to another page inside the tree.
+- **Row reference or payload:** The information used to retrieve or return the result.
+
+A textbook tree illustrates the structure; a production index adds page layouts, concurrency, caching, and transaction visibility. Database documentation often calls the whole family **B-Tree**, even when its implementation has B+Tree-style leaves and separators.
+
+**Check:** Does knowing that an index is a B-Tree tell you where the full row is stored? **No.** You also need to know the storage engine and index layout.
+
+### 05.2 — Full Table Scans (Lesson 002) {#_052-full-table-scans-lesson-002}
+
+**Goal:** Recognize the problem an index solves and when scanning remains sensible.
+
+A full scan examines table pages and tests rows against a condition. It can be expensive when a large table has only one matching row, but sensible when most rows are needed. Pages already in memory avoid storage reads; a page access is not automatically one physical disk operation.
+
+**Practice:** Use one PostgreSQL practice session with autocommit enabled. Run the SQL blocks in order. The temporary table disappears when you disconnect.
+
+```sql
+CREATE TEMP TABLE btree_people (
+  id integer NOT NULL,
+  name text NOT NULL,
+  email text NOT NULL,
+  notes text NOT NULL
+);
+
+INSERT INTO btree_people
+SELECT n, 'Person ' || n, 'person' || n || '@example.com',
+       repeat('Learning about trees. ', 10)
+FROM generate_series(1, 100000) AS g(n);
+
+ANALYZE btree_people;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT name FROM btree_people WHERE id = 50000;
+```
+
+There is no index yet, so expect a **Seq Scan**. Save the plan, rows removed by the filter, buffers, and execution time. Parallel scans can distribute work for eligible tables and queries; they do not eliminate that work. PostgreSQL temporary tables are not scanned by parallel workers.
+
+**Check:** Is a Seq Scan always the slowest choice? **No.** For a small table or a query returning most rows, it may be cheapest.
+
+### 05.3 — The Original B-Tree (Lesson 003) {#_053-the-original-b-tree-lesson-003}
+
+**Goal:** Understand nodes, keys, balance, and fan-out.
+
+A B-Tree is a balanced, multiway search tree. Each node holds ordered keys. Internal nodes have child pointers that divide the remaining key space; all leaves are at the same depth.
+
+In the classic B-Tree model, entries associated with records can appear in **internal nodes as well as leaves**. Their associated value might be a row reference rather than the full row.
+
+```text
+                  [4 | 8]
+                /    |    \
+          [1 2 3] [5 6 7] [9 10 11]
+```
+
+Every displayed key has an associated record value or reference in this simplified model. To search for `7`, compare it with `4` and `8`, follow the middle child, then find `7` there. To search for `4`, the matching entry is already in the root.
+
+**Fan-out** is the number of children an internal node can address. If a node has `k` separator keys, it normally has `k + 1` children. Textbooks use different definitions of “order” and “degree”; focus on the structure rather than assuming those terms always mean the same number.
+
+**Check:** Why use many children instead of a binary tree? More branches per page can make the tree shallower, reducing the number of pages on a search path.
+
+### 05.4 — How B-Trees Improve Performance (Lesson 004) {#_054-how-b-trees-improve-performance-lesson-004}
+
+**Goal:** Explain why a lookup can touch far fewer pages than a table scan.
+
+At each level, the search chooses a smaller key range. In database implementations, a tree node typically occupies a page containing many entries. With high fan-out, even a large index can have relatively few levels.
+
+For intuition, a fan-out of 100 gives up to 100 child pages from one internal page and 10,000 pages after another branching level. Real capacity depends on occupancy, key width, payload, and page overhead; these are not benchmark guarantees.
+
+Continue the lab:
+
+```sql
+CREATE UNIQUE INDEX btree_people_id_idx ON btree_people (id);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT name FROM btree_people WHERE id = 50000;
+```
+
+Expect an **Index Scan**: the tree finds the index entry, then PostgreSQL fetches `name` from the heap. Compare with Lesson 002. Index traversal and heap retrieval are distinct costs, and repeated runs can benefit from caching.
+
+Inserting a key into a full page can cause a **page split**. Entries are divided, a parent separator is added, and a split may propagate upward. These operations preserve the tree's balance but add write work.
+
+**Check:** Does an index make writes free? **No.** Inserts must maintain the tree, and splits can require additional page changes.
+
+### 05.5 — Limitations of the Classic B-Tree (Lesson 005) {#_055-limitations-of-the-classic-b-tree-lesson-005}
+
+**Goal:** Understand the motivation for separating navigation from record data.
+
+When internal entries carry both keys and record payload or references, fewer navigation entries may fit on a page. That can reduce fan-out and increase the number of pages in the tree.
+
+Classic B-Trees can answer range queries through an ordered traversal. They do **not** inherently require a fresh root-to-leaf search for every key. However, entries spread across internal nodes and leaves make range traversal less straightforward than walking a linked sequence of leaves.
+
+The design questions are:
+
+- Can internal pages mostly store navigation information?
+- Can all record entries be gathered at the leaf level?
+- Can a range scan continue from one leaf to the next?
+
+**Check:** Does removing payload from internal pages remove it from the index? **No.** A B+Tree moves record entries to the leaves; it still needs to store them.
+
+### 05.6 — B+Tree Structure and Range Queries (Lesson 006) {#_056-btree-structure-and-range-queries-lesson-006}
+
+**Goal:** Follow a range scan from its first matching leaf entry.
+
+In the textbook B+Tree model, internal nodes hold **separator keys and child pointers**. The record entries are stored in the leaves, which are commonly linked in key order. Some separator values also appear among the leaf keys.
+
+```text
+                    [4 | 7]              navigation
+                   /   |   \
+              [1 2 3] → [4 5 6] → [7 8 9]  leaf entries
+```
+
+To retrieve keys `4` through `8`:
+
+1. Descend through the separators to the leaf containing `4`.
+2. Read entries `4`, `5`, and `6`.
+3. Follow the next-leaf link and read `7` and `8`.
+4. Stop when the upper bound is exceeded.
+
+The keys are logically adjacent, but their pages are not guaranteed to be physically adjacent on disk. Fetching full rows through a secondary index can still involve scattered table reads.
+
+Continue the PostgreSQL lab:
+
+```sql
+VACUUM (ANALYZE) btree_people;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id FROM btree_people
+WHERE id BETWEEN 50000 AND 50100
+ORDER BY id;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name FROM btree_people
+WHERE id BETWEEN 50000 AND 50100
+ORDER BY id;
+```
+
+The first query can use an **Index Only Scan**; inspect `Heap Fetches`. The second needs `name`, which is outside this index, and can use an **Index Scan**. A matching B-Tree scan can provide the requested ordering without a separate sort. The planner still chooses the actual plan.
+
+**Check:** Is a range scan free after finding the first key? **No.** It must read the matching entries and, when necessary, fetch their rows.
+
+### 05.7 — Production DBMS Considerations (Lesson 007) {#_057-production-dbms-considerations-lesson-007}
+
+**Goal:** Account for pages, cache, and write behavior beyond the diagram.
+
+| Consideration | Practical effect |
+| --- | --- |
+| Key and payload width | Wider entries often mean fewer entries per page and a larger index. |
+| Internal-page caching | Frequently used upper levels may stay in memory even when the whole index does not fit. |
+| Leaf pages | Range scans can touch many leaf pages; caching and locality matter. |
+| Page splits | Inserts can add maintenance work and change page occupancy. |
+| MVCC visibility | Having a value in an index does not automatically mean PostgreSQL can skip heap checks. |
+
+PostgreSQL pages are normally 8 KiB; InnoDB's default page size is 16 KiB. These are database pages, not necessarily storage-device block sizes. Larger pages alone do not determine which engine is faster.
+
+Inspect your PostgreSQL configuration and the lab's storage:
+
+```sql
+SHOW block_size;
+
+SELECT pg_size_pretty(pg_table_size('btree_people')) AS table_size,
+       pg_size_pretty(pg_indexes_size('btree_people')) AS indexes_size;
+```
+
+Compare buffer counts and execution time under similar conditions. Do not equate tree height with disk reads: cached internal pages can make traversal cheap, while fetching many heap rows can dominate the query.
+
+**Check:** Must the entire index fit in RAM to be useful? **No.** Cached upper levels and frequently accessed leaves can still help substantially.
+
+### 05.8 — Storage Costs: PostgreSQL vs MySQL InnoDB (Lesson 008) {#_058-storage-costs-postgresql-vs-mysql-innodb-lesson-008}
+
+**Goal:** Understand what an index entry points to in each engine.
+
+| Detail | PostgreSQL | MySQL InnoDB |
+| --- | --- | --- |
+| Main row storage | Heap, separate from indexes. | Leaf records of the clustered index, normally organized by primary key. |
+| Secondary-index leaf | Indexed values and heap tuple references (TIDs), plus optional included values. | Secondary-key values and primary-key columns. |
+| Lookup needing other columns | Search index → fetch heap tuple. | Search secondary index → search clustered index by primary key → retrieve row. |
+| Primary-key lookup | Search primary-key index → fetch heap if needed. | Search clustered index → retrieve row at its leaf. |
+| Wider primary key | Enlarges its own index; not automatically copied into unrelated secondary indexes. | Adds storage to secondary indexes that carry the primary-key columns. |
+
+These are ordinary lookup paths; covering queries and transaction visibility can change the work needed. PostgreSQL's B-Tree implementation uses leaf entries and navigation pages; its documentation and SQL still call the method `btree`.
+
+```text
+PostgreSQL:    email index → heap tuple → name
+InnoDB:       email index → primary key → clustered leaf → name
+```
+
+**Key-width example:** A `BIGINT` value uses 8 bytes; a binary UUID uses 16 bytes. A UUID written as text usually contains 36 characters. Those figures describe the values, not the complete size of an index entry or its overhead.
+
+In InnoDB, wider primary keys can enlarge multiple secondary indexes. Random insertion order can also spread writes across leaf pages; increasing keys often improve locality but can concentrate concurrent inserts on the right edge. UUID choice is therefore a workload decision, not an automatic mistake. Time-ordered UUIDs and compact binary storage address different aspects of the cost.
+
+PostgreSQL has its own update trade-offs: a changed row version may require new index entries. Eligible **HOT updates** can avoid that when columns referenced by ordinary indexes are unchanged and the new version fits on the same heap page. The row-reference difference alone does not establish a universally faster engine.
+
+**Check:** Does InnoDB's clustered leaf contain just a pointer to the row? **No.** It holds the row record itself, although large values may have parts stored off-page.
+
+[References: InnoDB clustered and secondary indexes](https://dev.mysql.com/doc/refman/8.4/en/innodb-index-types.html) · [InnoDB physical index structure](https://dev.mysql.com/doc/refman/8.4/en/innodb-physical-structure.html) · [PostgreSQL HOT updates](https://www.postgresql.org/docs/18/storage-hot.html).
+
+### 05.9 — Summary and Self-Check (Lesson 009) {#_059-summary-and-self-check-lesson-009}
+
+**Goal:** Explain the complete path from a query to its result.
+
+| Question | Answer |
+| --- | --- |
+| Why does a tree help? | It narrows the search at each level instead of inspecting every row. |
+| What changes in a B+Tree? | Internal pages guide navigation; record entries are in the leaves. |
+| Why are linked leaves useful? | A range scan can continue through ordered leaf entries. |
+| What determines lookup cost? | Tree pages, caching, matching-entry count, row retrieval, and visibility checks. |
+| Why does the engine matter? | PostgreSQL points into a heap; InnoDB secondary indexes lead to a clustered index. |
+
+**Try explaining these without looking back:**
+
+1. Trace the path for `SELECT name FROM btree_people WHERE id = 50000` in each engine.
+2. Explain why `SELECT id` can avoid work that `SELECT id, name` requires in the lab.
+3. Describe how a wider primary key affects InnoDB secondary indexes.
+4. Explain why an index-only plan may still fetch heap tuples.
+5. Name a workload where scanning the table is a reasonable choice.
+
+**Answers:** PostgreSQL searches its primary-key index then the heap; InnoDB reaches the row in the clustered leaf. The lab's index stores `id`, not `name`. InnoDB secondary entries carry primary-key columns. PostgreSQL may need heap visibility checks. Scanning can suit a small table or a query returning most rows.
+
+**Remember:** Tree structure narrows the search; storage layout, cache, and workload determine the real cost.
+
+**Further reading:** [PostgreSQL B-Tree indexes](https://www.postgresql.org/docs/18/btree.html), [PostgreSQL B-Tree implementation notes](https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/access/nbtree/README), and [index-only scans](https://www.postgresql.org/docs/18/indexes-index-only-scans.html).
 
 ---
 
