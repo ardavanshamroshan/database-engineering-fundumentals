@@ -675,165 +675,230 @@ Master به نام `A` و دو replica به نام `A1` و `A2`:
 ### 04 — ایندکس‌گذاری
 
 - **وضعیت:** `[ ]`
-- **خلاصه:** ایندکس چیست، کی بسازیم، هزینه خواندن/نوشتن.
-- **تمرکز:** انواع ایندکس، selectivity، و trade-offها.
+- **خلاصه:** پیدا کردن سریع‌تر سطرها، انتخاب ایندکس برای کوئری‌های واقعی و سنجش نتیجه.
+- **تمرکز:** روش‌های خواندن داده، ستون‌های کلیدی و پوششی، انواع ایندکس و هزینهٔ خواندن و نوشتن.
 
-#### Heap در برابر Index (دو فایل جدا)
+**هدف یادگیری:** در پایان این فصل بتوانید توضیح دهید چرا یک کوئری از ایندکس استفاده می‌کند، ایندکس مناسبی بسازید و تأثیر آن را بسنجید.
 
-سطرهای جدول در PostgreSQL داخل **Heap** زندگی می‌کنند: صفحات نامرتب ۸ کیلوبایتی. Insert سطر را در اولین صفحهٔ دارای جا می‌گذارد. بدون مرتب‌سازی. نوشتن سریع. جستجو بدون کمک کند است — موتور **Seq Scan** می‌کند و همهٔ صفحات Heap را می‌خواند.
+#### ۱. ایندکس چه کاری انجام می‌دهد؟
 
-**Index** ساختار دوم است (معمولاً B-Tree). هر برگ `(key → ctid)` نگه می‌دارد. `ctid` همان `(page, slot)` است — آدرس سطر در Heap.
+ایندکس را مثل نمایهٔ یک کتاب در نظر بگیرید: موضوع موردنظر را بدون خواندن همهٔ صفحه‌ها پیدا می‌کنید. در PostgreSQL، سطرهای جدول در **Heap** ذخیره می‌شوند و ایندکس ساختاری جداگانه است که به آن سطرها اشاره می‌کند.
 
-```
-INSERT  →  نوشتن صفحهٔ Heap  (+ نوشتن هر ایندکس روی آن جدول)
-SELECT  →  Seq Scan روی Heap
-        یا Index Scan: پیمایش ایندکس → ctid → صفحهٔ Heap (IO1 + IO2)
-        یا Index Only Scan: جواب از خود ایندکس؛ Heap Fetches = 0 اگر visibility map بگوید صفحه all-visible است
-```
+**B-Tree**، نوع پیش‌فرض ایندکس، کلیدها را به‌ترتیب و همراه با ارجاع به سطرهای Heap نگه می‌دارد. این ساختار برای تساوی (`=`)، بازه‌ها (`>` و `BETWEEN`) و عبارت‌های سازگار با `ORDER BY` مفید است. ساختن آن، خود جدول را مرتب نمی‌کند.
 
-`PRIMARY KEY` / `UNIQUE` از قبل یک B-Tree یکتا می‌سازند. `CREATE INDEX` درخت اضافه می‌سازد. `SELECT *` بدون `WHERE` هیچ‌وقت از ایندکس استفاده نمی‌کند — خواستی همهٔ سطرهای Heap را.
+![ایندکس کلید را پیدا می‌کند و به سطر مربوط در Heap اشاره می‌کند](images/index-emp-id-heap.png)
 
-![ایندکس روی EMP_ID و اشاره‌گر به Heap — دو مرحله IO](images/index-emp-id-heap.png)
+**هزینه و فایده:** ایندکس می‌تواند کار لازم برای خواندن را کاهش دهد، اما فضای دیسک می‌گیرد و هزینهٔ نوشتن و نگهداری را افزایش می‌دهد. آن را برای کوئری‌هایی بسازید که واقعاً به بهبود سرعت نیاز دارند.
 
-#### آزمایشگاه (PostgreSQL 18.4)
+#### ۲. تمرین: مقایسهٔ کوئری قبل و بعد از ساخت ایندکس
+
+از یک پایگاه‌دادهٔ تمرینی PostgreSQL استفاده کنید. بلوک‌ها را به‌ترتیب، در یک نشست و با فعال بودن autocommit اجرا کنید. جدول موقت با قطع اتصال حذف می‌شود؛ برای تکرار تمرین، نشست تازه‌ای باز کنید.
+
+**گام اول: ساخت ۱۰۰٬۰۰۰ سطر.**
 
 ```sql
-CREATE TABLE employees (
-  id   serial PRIMARY KEY,   -- btree یکتای employees_pkey
-  name varchar(255)
+CREATE TEMP TABLE indexing_employees (
+  id integer PRIMARY KEY,
+  name text NOT NULL,
+  email text NOT NULL,
+  department_id integer NOT NULL,
+  active boolean NOT NULL
 );
 
-INSERT INTO employees (name)
-SELECT 'User ' || generate_series(1, 1000);
+INSERT INTO indexing_employees
+SELECT n,
+       'User ' || n,
+       'user' || n || '@example.com',
+       n % 100,
+       n % 10 = 0
+FROM generate_series(1, 100000) AS g(n);
 
-SELECT * FROM employees WHERE id = 1;
-
-EXPLAIN ANALYZE SELECT id FROM employees WHERE id = 2000;
-EXPLAIN ANALYZE SELECT id FROM employees WHERE name LIKE '%User %';
-
-CREATE INDEX employees_name ON employees(name);
-
-CREATE TABLE grades (
-  id   serial PRIMARY KEY,
-  name varchar(255)
-);
-CREATE INDEX idx_grades_names ON grades(name);
-
-EXPLAIN ANALYZE SELECT * FROM grades;  -- اجرا + زمان واقعی
-EXPLAIN SELECT * FROM grades;          -- فقط تخمین
+ANALYZE indexing_employees;
 ```
 
-۱٬۰۰۰ سطر خیلی کوچک است (Heap ≈ ۶ صفحه). Planner اغلب Seq Scan را ترجیح می‌دهد. همان کوئری روی ۱۰۰٬۰۰۰ سطر فاصله را نشان می‌دهد.
+کلید اصلی، یک B-Tree یکتا روی `id` می‌سازد؛ برای `email` ایندکسی ایجاد نمی‌کند. دستور `ANALYZE` آمار داده‌ها را در اختیار برنامه‌ریز کوئری قرار می‌دهد.
 
-`EXPLAIN` = هزینهٔ تخمینی. `EXPLAIN ANALYZE` = واقعاً اجرا می‌کند. `BUFFERS` تعداد صفحات را می‌شمارد.
+**گام دوم: سنجش جست‌وجوی ایمیل بدون ایندکس ایمیل.**
 
 ```sql
 EXPLAIN (ANALYZE, BUFFERS)
-SELECT id FROM employees WHERE id = 2000;
+SELECT id, name
+FROM indexing_employees
+WHERE email = 'user50000@example.com';
 ```
 
-#### بنچمارک (لوکال، PostgreSQL 18.4، کش گرم)
+انتظار می‌رود **Seq Scan** ببینید: PostgreSQL جدول را می‌خواند و سطرهای نامرتبط را کنار می‌گذارد. برنامهٔ اجرا و زمان آن را یادداشت کنید.
 
-| کوئری | Plan | Heap / صفحات | زمان |
-| ----- | ---- | ------------ | ---- |
-| `SELECT * FROM employees WHERE id = 1` (1k) | **Index Scan** `employees_pkey` | ایندکس + Heap (۳ بافر) | ~0.12 ms |
-| `SELECT id FROM employees WHERE id = 2000` (1k، miss) | **Index Only Scan** `employees_pkey` | Heap Fetches: 0 · ۲ بافر | 0.028 ms |
-| `SELECT id … WHERE name LIKE '%User %'` (1k) | **Seq Scan** | ۶ صفحه Heap، ۱۰۰۰ hit | 0.17 ms |
-| `SELECT * FROM grades` (خالی) | **Seq Scan** | ۰ صفحه | 0.007 ms |
-| `SELECT id FROM employees_big WHERE id = 2000` (100k) | **Index Only Scan** | Heap Fetches: 0 · ۳ بافر | **0.005 ms** |
-| `SELECT * FROM employees_big WHERE id = 2000` | **Index Scan** | ایندکس + Heap (۳ بافر) | 0.014 ms |
-| `SELECT id … WHERE name = 'User 50000'` | **Index Scan** `employees_big_name` | ایندکس + Heap | 0.017 ms |
-| `SELECT id … WHERE name LIKE '%User 99999'` | **Seq Scan** | **۵۴۱ صفحه Heap**، ۹۹٬۹۹۹ فیلتر | **3.5 ms** |
-| `LIKE 'User 5000%'` btree پیش‌فرض | **Seq Scan** | ۵۴۱ صفحه | ~12 ms |
-| `LIKE 'User 5000%'` + `varchar_pattern_ops` | **Index Scan** | ~۵ بافر، ۱۱ سطر | **0.029 ms** |
-
-اندازه (100k سطر): Heap **4328 kB** (۵۴۱ صفحه) · ایندکس PK **2208 kB** · ایندکس name **3104 kB**. ایندکس فضای اضافه است؛ هر `INSERT`/`UPDATE`/`DELETE` باید آن را هم بنویسد.
-
-#### معنی هر Plan
-
-**۱. Index Scan — اول ایندکس، بعد Heap**
+**گام سوم: ساخت ایندکس و اجرای دوبارهٔ همان کوئری.**
 
 ```sql
-SELECT * FROM employees WHERE id = 1;
--- Index Scan using employees_pkey
--- Index Cond: (id = 1)
+CREATE INDEX indexing_employees_email_idx
+ON indexing_employees (email);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name
+FROM indexing_employees
+WHERE email = 'user50000@example.com';
 ```
 
-B-Tree کلید اصلی `ctid` را پیدا می‌کند، بعد همان صفحهٔ Heap را برای `name` می‌خواند. دو IO در نمودار بالا. لازم است وقتی ایندکس همهٔ ستون‌های SELECT را ندارد.
+انتظار می‌رود **Index Scan** ببینید: ایمیل در ایندکس پیدا می‌شود، سپس `id` و `name` از Heap خوانده می‌شوند. میزان کار و زمان اجرا را با گام دوم مقایسه کنید.
 
-**۲. Index Only Scan — داخل ایندکس بمان**
+برنامه و زمان اجرا به داده‌ها، تنظیمات و وضعیت کش بستگی دارند. هر کوئری را چند بار اجرا و نتایج را در شرایط مشابه مقایسه کنید؛ انتظار ضریب افزایش سرعت ثابتی نداشته باشید.
 
-```sql
-SELECT id FROM employees WHERE id = 2000;
--- Index Only Scan using employees_pkey
--- Heap Fetches: 0
-```
+#### ۳. خواندن برنامهٔ اجرای کوئری
 
-`id` داخل `employees_pkey` است؛ سطر Heap لازم نیست. `id = 2000` روی جدول ۱k یک **miss** است (`rows=0`) — باز هم ارزان: یک جستجوی ایندکس، نه پیمایش جدول.
-
-`Heap Fetches: 0` بعد از `VACUUM`: visibility map صفحات Heap را all-visible علامت می‌زند. اگر vacuum کهنه باشد، Postgres حتی در plan از نوع index-only به Heap سرک می‌کشد (`Heap Fetches > 0`).
-
-**۳. Seq Scan — پیمایش Heap**
-
-```sql
-SELECT id FROM employees WHERE name LIKE '%User %';
--- Seq Scan on employees
--- Filter: (name ~~ '%User %')
-```
-
-`%` اول کلید را در B-Tree نمی‌شود seek کرد (درخت از **ابتدای** کلید مرتب است). موتور همهٔ صفحات Heap را می‌خواند و فیلتر می‌زند. همین plan **قبل و بعد** از `CREATE INDEX employees_name`. ایندکس کمک نمی‌کند.
-
-`grades` خالی: `SELECT *` بدون `WHERE`. ایندکس روی `name` بی‌استفاده. Seq Scan صفر صفحه.
-
-**۴. تساوی روی ایندکس ثانویه باز هم Heap می‌زند**
-
-```sql
-CREATE INDEX employees_name ON employees(name);
-
-SELECT id FROM employees WHERE name = 'User 500';
--- Index Scan using employees_name   -- نه Index Only
-```
-
-ایندکس name فقط `(name → ctid)` دارد، نه `id`. اسم را پیدا کن، بعد سطر Heap را بگیر تا `id` برگردد. Covering index با `INCLUDE (id)` می‌تواند این را Index Only Scan کند.
-
-**۵. `LIKE` پیشوندی opclass درست می‌خواهد**
-
-B-Tree پیش‌فرض روی `varchar` (collation غیر `C`) از `=` و `<` و `>` پشتیبانی می‌کند. از `LIKE 'User 5%'` **پشتیبانی نمی‌کند**. Planner حتی روی 100k سطر Seq Scan می‌کند.
-
-```sql
-CREATE INDEX employees_name_pattern ON employees (name varchar_pattern_ops);
-
--- حالا:
--- Index Cond: (name ~>=~ 'User 5000' AND name ~<~ 'User 5001')
--- Filter: (name ~~ 'User 5000%')
-```
-
-رنج روی ایندکس، بعد فیلتر `~~`. `LIKE '%User %'` با `%` اول همچنان Seq Scan است.
-
-#### کی ایندکس بسازیم
-
-بساز برای:
-
-- تساوی / رنج روی ستون selective (`WHERE id =`، `WHERE email =`، `WHERE created_at >`)
-- کلید join و `ORDER BY` هم‌تراز با ترتیب ایندکس
-- `LIKE 'foo%'` **با** `varchar_pattern_ops` (یا collation `C`)
-
-نساز / هدر است:
-
-- جدول خیلی کوچک (۱k سطر، چند صفحه) — Seq Scan از قبل ارزان است
-- `SELECT *` بدون فیلتر
-- `LIKE '%…%'` با `%` اول (اگر مجبوری `pg_trgm` GIN)
-- ستون کم‌selectivity (`boolean`، status با ۲ مقدار) — lookup ایندکس + IO تصادفی Heap می‌تواند از Seq Scan ببازد
-
-#### هزینه خواندن در برابر نوشتن
-
-| | فقط Heap | Heap + ایندکس‌ها |
+| روش اجرا | شیوهٔ دریافت داده | کاربرد رایج |
 | --- | --- | --- |
-| `INSERT` | append سطر به یک صفحه Heap | Heap **به‌علاوه** insert در هر btree |
-| Point `SELECT` | اسکن همهٔ صفحات Heap | چند صفحه ایندکس + شاید ۱ صفحه Heap |
-| `UPDATE` ستون ایندکس‌شده | Heap + سطر جدید (MVCC) | به‌علاوه به‌روز کردن / insert در ایندکس |
+| **Seq Scan** | صفحه‌های جدول را می‌خواند و شرط را بررسی می‌کند. | جدول کوچک یا کوئری با تعداد زیادی سطر خروجی. |
+| **Index Scan** | ورودی‌های ایندکس را پیدا می‌کند، سپس به Heap مراجعه می‌کند. | جست‌وجوی محدود با نیاز به ستون‌های خارج از ایندکس. |
+| **Index Only Scan** | مقدارها را از ایندکس می‌گیرد؛ وضعیت رؤیت‌پذیری را بررسی می‌کند و ممکن است به Heap مراجعه کند. | کوئری‌هایی که ستون‌های موردنیازشان در ایندکس موجود است. |
+| **Bitmap Index Scan + Bitmap Heap Scan** | محل سطرها را جمع‌آوری می‌کند، سپس صفحه‌های Heap را به‌ترتیب می‌خواند. | دریافت چندین سطر یا ترکیب چند ایندکس. |
 
-ایندکس **خواندن selective** را تند می‌کند. **نوشتن** را کند می‌کند و RAM/دیسک می‌خورد. با `EXPLAIN (ANALYZE, BUFFERS)` روی تعداد سطر واقعی بسنج، نه جدول اسباب‌بازی ۱k.
+ابتدا این بخش‌های خروجی را بررسی کنید:
+
+- **Index Cond:** شرطی که برای جست‌وجو در ایندکس استفاده شده است.
+- **Filter / Rows Removed by Filter:** بررسی و حذف سطرها پس از دریافت سطرهای احتمالی.
+- **تعداد سطرهای تخمینی و واقعی:** اختلاف زیاد می‌تواند نشانهٔ آمار قدیمی یا دشواری تخمین توزیع داده‌ها باشد.
+- **Buffers:** دسترسی به صفحه‌ها از حافظه یا با خواندن داده؛ این عدد، تعداد صفحه‌های یکتا یا عملیات فیزیکی دیسک نیست.
+- **Heap Fetches:** تعداد مراجعه‌ها به Heap در اسکن فقط ایندکس. صفر یعنی آن اجرا به مراجعه به Heap نیاز نداشته است.
+- **Execution Time:** زمان اجرای کوئری اندازه‌گیری‌شده؛ هزینهٔ تخمینی برنامه‌ریز جداست و برحسب میلی‌ثانیه نیست.
+
+`EXPLAIN` تخمین‌ها را نشان می‌دهد. `EXPLAIN ANALYZE` دستور را **واقعاً اجرا می‌کند**؛ تغییرات دستورهای `INSERT`، `UPDATE` و `DELETE` نیز اعمال می‌شوند.
+
+#### ۴. ستون‌های کلیدی و ستون‌های پوششی
+
+**ستون‌های کلیدی** مسیر جست‌وجو و ترتیب ایندکس را تعیین می‌کنند. **ستون‌های پوششی** که با `INCLUDE` اضافه می‌شوند، مقدارهای لازم برای خروجی را نگه می‌دارند؛ در ترتیب جست‌وجو یا شرط یکتایی نقشی ندارند.
+
+در `WHERE email = ...`، ستون `email` کلید جست‌وجو است. برای برگرداندن `id` و `name` بدون خواندن مقدار آن‌ها از Heap، ایندکس تمرین را با یک **ایندکس پوششی** جایگزین کنید:
+
+```sql
+DROP INDEX indexing_employees_email_idx;
+
+CREATE INDEX indexing_employees_email_cover_idx
+ON indexing_employees (email) INCLUDE (id, name);
+
+VACUUM (ANALYZE) indexing_employees;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name
+FROM indexing_employees
+WHERE email = 'user50000@example.com';
+```
+
+اکنون **Index Only Scan** امکان‌پذیر است. PostgreSQL همچنان بررسی می‌کند که هر سطر برای تراکنش قابل‌رؤیت باشد. `VACUUM` می‌تواند در **نقشهٔ رؤیت‌پذیری** (visibility map)، صفحه‌های Heap را برای همهٔ تراکنش‌ها قابل‌رؤیت علامت بزند؛ در این صورت مراجعه به Heap لازم نیست. نوشتن‌های تازه ممکن است دوباره بررسی Heap را ضروری کنند.
+
+| تعریف ایندکس | کلیدهای جست‌وجو و ترتیب | مقدارهای اضافی ذخیره‌شده |
+| --- | --- | --- |
+| `(email)` | `email` | ندارد |
+| `(email, id)` | ابتدا `email`، سپس `id` | ندارد |
+| `(email) INCLUDE (id, name)` | `email` | `id` و `name` |
+
+ایندکس یکتا روی `(email) INCLUDE (id)`، فقط یکتایی **email** را تضمین می‌کند. اضافه کردن همهٔ ستون‌ها با `INCLUDE` می‌تواند هزینهٔ ایندکس را بالا ببرد؛ اسکن فقط ایندکس لزوماً سریع‌تر نیست.
+
+#### ۵. سه راهکار کاربردی برای طراحی ایندکس
+
+مثال‌های زیر ادامهٔ همان تمرین هستند. هرکدام برای الگوی کوئری متفاوتی کاربرد دارند.
+
+**ایندکس ترکیبی: فیلتر و مرتب‌سازی هم‌زمان.**
+
+```sql
+CREATE INDEX indexing_employees_department_id_idx
+ON indexing_employees (department_id, id);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM indexing_employees
+WHERE department_id = 42
+ORDER BY id
+LIMIT 20;
+```
+
+ایندکس، سطرها را بر اساس دپارتمان گروه‌بندی می‌کند و در هر گروه، ترتیب `id` را نگه می‌دارد. برای این کوئری، ستون شرط تساوی را اول و ستون مرتب‌سازی را بعد قرار دهید. جست‌وجوی صرفاً `id` معمولاً با ایندکس موجود کلید اصلی بهتر انجام می‌شود. گاهی ستون‌های بعدی بدون شرط روی ستون اول هم قابل‌استفاده‌اند؛ برای نمونه، PostgreSQL 18 از skip scan پشتیبانی می‌کند. قاعدهٔ ستون اول را مطلق ندانید و نتیجه را بسنجید.
+
+**ایندکس جزئی: فقط سطرهای موردنیاز را ایندکس کنید.**
+
+```sql
+CREATE INDEX indexing_employees_active_id_idx
+ON indexing_employees (id) WHERE active;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM indexing_employees
+WHERE active
+ORDER BY id
+LIMIT 20;
+```
+
+فقط ۱۰٪ سطرهای تمرین فعال‌اند؛ بنابراین این ایندکس از ایندکس همهٔ سطرها کوچک‌تر است. برنامه‌ریز باید بتواند ثابت کند که شرط کوئری، شرط ایندکس را برقرار می‌کند. شرط پارامتری در یک برنامهٔ اجرای عمومی، مانند `active = $1`، ممکن است مانع این تشخیص شود. شرط ایندکس نمی‌تواند از عبارت‌های متغیری مانند `now()` استفاده کند.
+
+**ایندکس روی عبارت: جست‌وجوی مقدار محاسبه‌شده.**
+
+```sql
+CREATE INDEX indexing_employees_email_lower_idx
+ON indexing_employees (lower(email));
+
+ANALYZE indexing_employees;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM indexing_employees
+WHERE lower(email) = lower('USER50000@EXAMPLE.COM');
+```
+
+در کوئری از عبارت سازگار با ایندکس استفاده کنید. ایندکس معمولی `email` مستقیماً جست‌وجوی `lower(email)` را پشتیبانی نمی‌کند؛ ایندکس روی عبارت، مقدار محاسبه‌شده را ذخیره می‌کند و هزینهٔ نوشتن را افزایش می‌دهد.
+
+#### ۶. انتخاب نوع ایندکس
+
+| نوع | کاربرد مناسب | نکتهٔ مهم |
+| --- | --- | --- |
+| **B-Tree** | تساوی، بازه و مرتب‌سازی. | نقطهٔ شروع برای جست‌وجوهای معمولی. |
+| **Hash** | فقط تساوی. | از بازه و مرتب‌سازی پشتیبانی نمی‌کند؛ پیش از انتخاب، با B-Tree مقایسه کنید. |
+| **GIN** | بررسی وجود داده در JSONB، آرایه‌ها و جست‌وجوی تمام‌متن. | اجزای درون مقدارها را جست‌وجو می‌کند؛ هزینهٔ نوشتن می‌تواند زیاد باشد. |
+| **GiST / SP-GiST** | جست‌وجوی مکانی، بازه‌ای یا نزدیک‌ترین همسایه، بسته به نوع داده و کلاس عملگر. | بر اساس عملگرهای موردنیاز انتخاب کنید؛ PostGIS امکانات جغرافیایی را اضافه می‌کند. |
+| **BRIN** | جدول‌های بسیار بزرگ با ارتباط میان مقدار ستون و ترتیب فیزیکی سطرها، مانند زمان ثبت در داده‌های الحاقی. | خلاصهٔ فشرده‌ای از بازه‌های صفحه‌ها ذخیره می‌کند؛ سطرهای احتمالی همچنان باید بررسی شوند. |
+
+نوع ایندکس با `USING` انتخاب می‌شود؛ برای نمونه، `CREATE INDEX ... USING gin (metadata)` روی یک ستون JSONB. نوع داده و عملگرهای کوئری باید با کلاس عملگر ایندکس سازگار باشند.
+
+برای جست‌وجوی الگوهای متنی:
+
+- `LIKE 'User 5%'` می‌تواند از B-Tree استفاده کند؛ خارج از locale نوع `C`، جست‌وجوی پیشوندی معمولاً برای `text` به `text_pattern_ops` و برای `varchar` به `varchar_pattern_ops` نیاز دارد.
+- `LIKE '%User 5%'` نمی‌تواند با B-Tree معمولی، جست‌وجوی پیشوندی انجام دهد. برای جست‌وجوی بخشی از متن، ایندکس سه‌حرفی GIN یا GiST از طریق `pg_trgm` را بررسی کنید.
+
+#### ۷. نگهداری ایندکس‌های مفید
+
+1. از کوئری‌های پرتکرار یا پرهزینه و عبارت‌های `WHERE`، `JOIN` و `ORDER BY` آن‌ها شروع کنید.
+2. ایندکسی را ترجیح دهید که جست‌وجو را به بخش کوچکی از جدول محدود کند. حتی ستون با تعداد مقدارهای متمایز کم، برای جست‌وجوی یک مقدار نادر می‌تواند مفید باشد.
+3. ایندکس‌های موجود را بررسی کنید: محدودیت‌های `PRIMARY KEY` و `UNIQUE` از قبل ایندکس می‌سازند. PostgreSQL برای ستون‌های ارجاع‌دهندهٔ کلید خارجی خودکار ایندکس نمی‌سازد؛ برای اتصال جدول‌ها و به‌روزرسانی یا حذف سطر والد، نیاز به آن را بررسی کنید.
+4. آمار `ANALYZE` و نگهداری با vacuum را به‌روز نگه دارید. پیش از حذف ایندکس، اندازه و کاربردش را بررسی کنید؛ صفر بودن تعداد اسکن‌های ثبت‌شده به‌تنهایی نشانهٔ بی‌فایده بودن آن نیست.
+5. فایدهٔ خواندن را با فضای دیسک و هزینهٔ نوشتن مقایسه کنید. برای ساخت ایندکس روی جدول عملیاتی پرترافیک، `CREATE INDEX CONCURRENTLY` را بررسی کنید تا نوشتن هنگام ساخت ادامه داشته باشد؛ این دستور داخل بلوک تراکنش اجرا نمی‌شود.
+
+تعریف ایندکس‌ها و اندازهٔ آن‌ها را در تمرین ببینید:
+
+```sql
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE schemaname LIKE 'pg_temp_%'
+  AND tablename = 'indexing_employees';
+
+SELECT pg_size_pretty(pg_table_size('indexing_employees')) AS table_size,
+       pg_size_pretty(pg_indexes_size('indexing_employees')) AS indexes_size;
+```
+
+Seq Scan لزوماً مشکل نیست: برای جدول کوچک یا کوئری نیازمند بیشتر سطرها، ممکن است کم‌هزینه‌ترین روش باشد. `SELECT *` مانع استفاده از ایندکس نمی‌شود، اما چون ایندکس معمولاً همهٔ ستون‌ها را ندارد، اغلب مراجعه به Heap لازم است.
+
+#### ۸. خودآزمایی
+
+- چرا جست‌وجوی ایمیل پیش از گام سوم به Seq Scan نیاز داشت؟
+- چرا `INCLUDE (id, name)` امکان اسکن فقط ایندکس را فراهم می‌کند، بدون آنکه `name` کلید جست‌وجو شود؟
+- چرا اسکن فقط ایندکس ممکن است همچنان Heap Fetches داشته باشد؟
+- کدام ایندکس تمرین با `WHERE department_id = 42 ORDER BY id LIMIT 20` سازگار است؟
+- پیش از نگه داشتن یک ایندکس دیگر، چه چیزهایی را می‌سنجید؟
+
+**پاسخ‌ها:** ایندکس ایمیل وجود نداشت؛ ستون‌های پوششی مقدارهای خروجی را فراهم می‌کنند؛ بررسی رؤیت‌پذیری ممکن است به Heap نیاز داشته باشد؛ `(department_id, id)` با فیلتر و ترتیب سازگار است؛ میزان کار و زمان کوئری، اندازهٔ ایندکس و هزینهٔ اضافی نوشتن را مقایسه کنید.
+
+**به خاطر بسپارید:** طراحی بر اساس کوئری ← سنجش برنامهٔ اجرا ← ساخت کوچک‌ترین ایندکس مفید ← سنجش دوباره.
+
+**مطالعهٔ بیشتر:** مستندات PostgreSQL دربارهٔ [انواع ایندکس](https://www.postgresql.org/docs/18/indexes-types.html)، [ایندکس‌های چندستونی](https://www.postgresql.org/docs/18/indexes-multicolumn.html)، [ایندکس‌های پوششی](https://www.postgresql.org/docs/18/indexes-index-only-scans.html)، [ایندکس‌های جزئی](https://www.postgresql.org/docs/18/indexes-partial.html) و [ایندکس‌های روی عبارت](https://www.postgresql.org/docs/18/indexes-expressional.html).
 
 ---
 

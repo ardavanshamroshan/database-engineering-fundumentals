@@ -677,9 +677,230 @@ Non-clustered / secondary indexes in PostgreSQL work the same idea: the index st
 ### 04 — Database Indexing {#_04-database-indexing}
 
 - **Status:** `[ ]`
-- **Summary:** What indexes are, when to create them, read/write cost.
-- **Focus:** Index types, selectivity, and trade-offs.
-- **Notes:** *(later)*
+- **Summary:** Find rows efficiently, choose indexes for real queries, and measure the result.
+- **Focus:** Scan plans, key vs included columns, index types, and read/write trade-offs.
+
+**Learning goal:** By the end, you should be able to explain why a query uses an index, build a suitable one, and check whether it helps.
+
+#### 1. What an index does
+
+Think of an index as a book's index: it helps you find a topic without reading every page. In PostgreSQL, table rows live in the **heap**, and an index is a separate structure that points to those rows.
+
+A **B-Tree**, the default index type, stores ordered keys and references to heap tuples. It helps with equality (`=`), ranges (`>`, `BETWEEN`), and matching `ORDER BY` clauses. It does not sort the table itself.
+
+![An index finds a key, then points to the row in the heap](/images/index-emp-id-heap.png)
+
+**The trade-off:** Indexes can reduce read work, but take disk space and add write and maintenance work. Create them for queries you actually need to speed up.
+
+#### 2. Lab: compare a query before and after indexing
+
+Use a PostgreSQL practice database. Run the blocks in order, in the same session, with autocommit enabled. The temporary table disappears when you disconnect, so you can repeat the lab in a new session.
+
+**Step 1 — Create 100,000 rows.**
+
+```sql
+CREATE TEMP TABLE indexing_employees (
+  id integer PRIMARY KEY,
+  name text NOT NULL,
+  email text NOT NULL,
+  department_id integer NOT NULL,
+  active boolean NOT NULL
+);
+
+INSERT INTO indexing_employees
+SELECT n,
+       'User ' || n,
+       'user' || n || '@example.com',
+       n % 100,
+       n % 10 = 0
+FROM generate_series(1, 100000) AS g(n);
+
+ANALYZE indexing_employees;
+```
+
+The primary key already creates a unique B-Tree on `id`. It does **not** create an index on `email`. `ANALYZE` gives the planner statistics about the data.
+
+**Step 2 — Measure an email lookup without an email index.**
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name
+FROM indexing_employees
+WHERE email = 'user50000@example.com';
+```
+
+Expect a **Seq Scan**: PostgreSQL examines the table and filters out nonmatching rows. Save the plan and execution time.
+
+**Step 3 — Add an index and run the same query.**
+
+```sql
+CREATE INDEX indexing_employees_email_idx
+ON indexing_employees (email);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name
+FROM indexing_employees
+WHERE email = 'user50000@example.com';
+```
+
+Expect an **Index Scan**: find the email in the index, then fetch `id` and `name` from the heap. Compare the work done and execution time with Step 2.
+
+Plans and times depend on your data, settings, and cache. Repeat each query a few times; compare under similar conditions rather than expecting a fixed speedup.
+
+#### 3. Read the execution plan
+
+| Plan | How it retrieves data | Common use |
+| --- | --- | --- |
+| **Seq Scan** | Reads table pages and applies a filter. | Small tables or queries returning many rows. |
+| **Index Scan** | Finds entries in the index, then visits the heap. | Selective lookups that need columns outside the index. |
+| **Index Only Scan** | Gets values from the index; checks visibility and may visit the heap. | Queries whose required columns are available in the index. |
+| **Bitmap Index Scan + Bitmap Heap Scan** | Collects row locations, then visits heap pages in page order. | Fetching multiple matches or combining indexes. |
+
+Start with these fields:
+
+- **Index Cond:** The condition used to search the index.
+- **Filter / Rows Removed by Filter:** Work done after retrieving candidate rows.
+- **Estimated vs actual rows:** Large differences can indicate outdated statistics or data the planner estimates poorly.
+- **Buffers:** Page accesses through memory or reads; these are not a count of unique pages or physical disk operations.
+- **Heap Fetches:** Heap visits during an index-only scan. Zero means no heap visits were needed for that execution.
+- **Execution Time:** Time spent executing this measured query; planner cost is a separate estimate, not milliseconds.
+
+`EXPLAIN` shows estimates. `EXPLAIN ANALYZE` **executes** the statement, including any changes made by an `INSERT`, `UPDATE`, or `DELETE`.
+
+#### 4. Key columns vs included columns
+
+**Key columns** guide index searches and define ordering. **Included columns** store extra values for returning results; they do not define search order or uniqueness.
+
+For `WHERE email = ...`, `email` is the search key. To return `id` and `name` without fetching their values from the heap, replace the lab's index with a **covering index**:
+
+```sql
+DROP INDEX indexing_employees_email_idx;
+
+CREATE INDEX indexing_employees_email_cover_idx
+ON indexing_employees (email) INCLUDE (id, name);
+
+VACUUM (ANALYZE) indexing_employees;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name
+FROM indexing_employees
+WHERE email = 'user50000@example.com';
+```
+
+An **Index Only Scan** is now possible. PostgreSQL still checks whether each row is visible to the transaction. `VACUUM` can mark heap pages as all-visible in the **visibility map**, allowing heap visits to be skipped. Recent writes can make heap checks necessary again.
+
+| Definition | Search / ordering keys | Extra values stored |
+| --- | --- | --- |
+| `(email)` | `email` | None |
+| `(email, id)` | `email`, then `id` | None |
+| `(email) INCLUDE (id, name)` | `email` | `id`, `name` |
+
+A unique index on `(email) INCLUDE (id)` enforces uniqueness of **email alone**. Adding every column with `INCLUDE` can make the index expensive; an index-only plan is not automatically faster.
+
+#### 5. Three useful index strategies
+
+These examples continue the same lab. Each solves a different query pattern.
+
+**Composite index — filter and sort together.**
+
+```sql
+CREATE INDEX indexing_employees_department_id_idx
+ON indexing_employees (department_id, id);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM indexing_employees
+WHERE department_id = 42
+ORDER BY id
+LIMIT 20;
+```
+
+The index groups rows by department, then orders each group by `id`. For this query, put the equality filter first and the ordering column next. Queries on `id` alone are usually better served by the existing primary-key index. Later columns can sometimes be used without the leading column, including via PostgreSQL 18's skip scan; measure rather than treating the leftmost-prefix rule as absolute.
+
+**Partial index — index only the rows a query needs.**
+
+```sql
+CREATE INDEX indexing_employees_active_id_idx
+ON indexing_employees (id) WHERE active;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM indexing_employees
+WHERE active
+ORDER BY id
+LIMIT 20;
+```
+
+Only 10% of the lab rows are active, so this index is smaller than one covering every row. The planner must be able to prove that the query's condition implies the index predicate. A generic parameterized condition such as `active = $1` may prevent that proof. Index predicates cannot use changing expressions such as `now()`.
+
+**Expression index — search a computed value.**
+
+```sql
+CREATE INDEX indexing_employees_email_lower_idx
+ON indexing_employees (lower(email));
+
+ANALYZE indexing_employees;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id
+FROM indexing_employees
+WHERE lower(email) = lower('USER50000@EXAMPLE.COM');
+```
+
+Use a matching expression in the query. A plain index on `email` does not directly support searching `lower(email)`; the expression index stores the computed value and adds write work.
+
+#### 6. Choose the index type
+
+| Type | Useful for | Keep in mind |
+| --- | --- | --- |
+| **B-Tree** | Equality, ranges, and ordering. | Start here for ordinary lookups. |
+| **Hash** | Equality only. | Does not support ranges or ordering; compare with B-Tree before choosing it. |
+| **GIN** | JSONB containment, arrays, and full-text search. | Matches components inside values; can add substantial write work. |
+| **GiST / SP-GiST** | Spatial, range, or nearest-neighbor queries, depending on the type and operator class. | Choose according to the operators you need; PostGIS adds geographic support. |
+| **BRIN** | Very large tables where values correlate with physical row order, such as append-only timestamps. | Stores compact summaries of page ranges; candidate rows still need checking. |
+
+Index types are selected with `USING`, for example `CREATE INDEX ... USING gin (metadata)` for a JSONB column. The data type and operators must match the index's operator class.
+
+For text patterns:
+
+- `LIKE 'User 5%'` can use a B-Tree; outside the `C` locale, prefix searches generally need `text_pattern_ops` for `text` or `varchar_pattern_ops` for `varchar`.
+- `LIKE '%User 5%'` cannot use a normal B-Tree to seek a prefix. Consider a GIN or GiST trigram index through `pg_trgm` for substring searches.
+
+#### 7. Keep indexes useful
+
+1. Start with frequent or expensive queries and their `WHERE`, `JOIN`, and `ORDER BY` clauses.
+2. Prefer indexes that narrow the search to a small part of the table. A low-cardinality column can still be useful when a particular value is rare.
+3. Check existing indexes: `PRIMARY KEY` and `UNIQUE` constraints already create them. PostgreSQL does not automatically index the referencing columns of a foreign key; consider those indexes for joins and parent-row updates or deletes.
+4. Keep `ANALYZE` statistics and vacuum maintenance current. Inspect size and usage before removing an index; zero recorded scans alone is not proof that it is unnecessary.
+5. Measure the read benefit against disk usage and write cost. On busy production tables, consider `CREATE INDEX CONCURRENTLY` to allow writes during the build; it cannot run inside a transaction block.
+
+Inspect the lab's index sizes and definitions:
+
+```sql
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE schemaname LIKE 'pg_temp_%'
+  AND tablename = 'indexing_employees';
+
+SELECT pg_size_pretty(pg_table_size('indexing_employees')) AS table_size,
+       pg_size_pretty(pg_indexes_size('indexing_employees')) AS indexes_size;
+```
+
+A Seq Scan is not automatically a problem: it can be the cheapest plan for a small table or a query needing most rows. `SELECT *` does not forbid index use, but it often requires heap access because the index lacks some columns.
+
+#### 8. Check your understanding
+
+- Why did the email lookup need a Seq Scan before Step 3?
+- Why can `INCLUDE (id, name)` make an index-only scan possible without making `name` a search key?
+- Why can an index-only scan still show heap fetches?
+- Which lab index matches `WHERE department_id = 42 ORDER BY id LIMIT 20`?
+- What would you measure before keeping another index?
+
+**Answers:** There was no email index; included columns supply result values; visibility checks may need the heap; `(department_id, id)` matches the filter and order; compare query work and time, index size, and write overhead.
+
+**Remember:** Design for the query → measure the plan → add the smallest useful index → measure again.
+
+**Further reading:** PostgreSQL documentation on [index types](https://www.postgresql.org/docs/18/indexes-types.html), [multicolumn indexes](https://www.postgresql.org/docs/18/indexes-multicolumn.html), [covering indexes](https://www.postgresql.org/docs/18/indexes-index-only-scans.html), [partial indexes](https://www.postgresql.org/docs/18/indexes-partial.html), and [expression indexes](https://www.postgresql.org/docs/18/indexes-expressional.html).
 
 ---
 
