@@ -4,8 +4,16 @@ import { fundamentalsSidebar } from '../scripts/fundamentals-sidebar.mjs'
 
 const repo = 'https://github.com/ardavanshamroshan/database-engineering-fundumentals'
 const base = '/database-engineering-fundumentals/'
+const markdownOptions = {
+  theme: {
+    light: 'github-light-high-contrast',
+    dark: 'github-dark',
+  },
+  lineNumbers: true,
+} as const
 const chapters = await fundamentalsSidebar(
   readFileSync(new URL('../fundamentals/index.md', import.meta.url), 'utf8'),
+  markdownOptions,
 )
 
 const sidebar = [
@@ -50,13 +58,7 @@ export default defineConfig({
   lastUpdated: true,
   ignoreDeadLinks: true,
 
-  markdown: {
-    theme: {
-      light: 'material-theme-palenight',
-      dark: 'material-theme-palenight',
-    },
-    lineNumbers: true,
-  },
+  markdown: markdownOptions,
 
   head: [
     ['link', { rel: 'stylesheet', href: `${base}fonts/fonts.css` }],

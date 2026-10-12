@@ -51,9 +51,10 @@ const sectionLabels = {
 }
 
 // Use the same Markdown parser as the page, including explicit and duplicate IDs.
-export async function fundamentalsSidebar(markdown) {
+export async function fundamentalsSidebar(markdown, markdownOptions = {}) {
   const renderer = await createMarkdownRenderer(
     fileURLToPath(new URL('../', import.meta.url)),
+    markdownOptions,
   )
   const tokens = renderer.parse(markdown, {})
   const chapters = []

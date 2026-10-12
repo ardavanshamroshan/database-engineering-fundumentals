@@ -36,9 +36,12 @@
   --color-brand-3: #115e59;
   --color-brand-bright: #2dd4bf;
 
-  --color-code-bg: #1c1c1a;
-  --color-code-chrome: #111110;
-  --color-code-line-num: #6f6d66;
+  --color-code-bg: #f9f9f8;
+  --color-code-chrome: #f1f0ef;
+  --color-code-line-num: #63635e;
+  --color-code-border: var(--color-sand-light-6);
+  --color-code-inner-border: var(--color-sand-light-5);
+  --color-code-hover: color-mix(in oklab, #000 6%, transparent);
 
   --vp-c-brand-1: var(--color-brand);
   --vp-c-brand-2: var(--color-brand-2);
@@ -66,7 +69,7 @@
   --vp-layout-max-width: 1440px;
   --vp-code-block-bg: var(--color-code-bg);
   --vp-code-copy-code-bg: transparent;
-  --vp-code-copy-code-hover-bg: color-mix(in oklab, #fff 8%, transparent);
+  --vp-code-copy-code-hover-bg: var(--color-code-hover);
   --vp-code-copy-code-border-color: transparent;
   --vp-code-line-number-color: var(--color-code-line-num);
   --vp-code-font-size: 13px;
@@ -98,6 +101,12 @@
 }
 
 .dark {
+  --color-code-bg: #1c1c1a;
+  --color-code-chrome: #111110;
+  --color-code-line-num: #6f6d66;
+  --color-code-border: var(--color-sand-dark-5);
+  --color-code-inner-border: color-mix(in oklab, var(--color-sand-dark-8) 25%, transparent);
+  --color-code-hover: color-mix(in oklab, #fff 8%, transparent);
   --vp-c-bg: var(--color-sand-dark-1);
   --vp-c-bg-alt: var(--color-sand-dark-2);
   --vp-c-bg-elv: var(--color-sand-dark-2);
@@ -711,7 +720,7 @@
   margin: 1.15rem 0 1.5rem;
   border-radius: 0.375rem;
   background: var(--color-code-chrome) !important;
-  border: 1px solid var(--color-sand-dark-5);
+  border: 1px solid var(--color-code-border);
   padding: 0.3rem !important;
   box-shadow: none;
 }
@@ -726,7 +735,7 @@
 .vp-doc div[class*='language-'] > pre {
   margin: 0 !important;
   border-radius: 0.25rem;
-  border: 1px solid color-mix(in oklab, var(--color-sand-dark-8) 25%, transparent);
+  border: 1px solid var(--color-code-inner-border);
   padding: 1.1rem 1.15rem !important;
   overflow-x: auto;
 }
@@ -778,13 +787,13 @@
 
 .vp-doc [class*='language-'] > button.copy:hover {
   opacity: 1;
-  background-color: color-mix(in oklab, #fff 8%, transparent);
+  background-color: var(--color-code-hover);
 }
 
 .vp-doc [class*='language-'] > span.lang {
   top: 0.55rem;
   right: 2.75rem;
-  color: var(--color-sand-dark-9);
+  color: var(--color-code-line-num);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
