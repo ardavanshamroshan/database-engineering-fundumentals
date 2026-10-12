@@ -70,6 +70,20 @@ Marks: `[ ]` not started · `[~]` in progress · `[x]` done
 ### Part II — Scale & Distribution
 
 - [06 — Database Partitioning](#06--database-partitioning)
+  - [06.1 — Introduction and Learning Path (Lesson 001)](#061--introduction-and-learning-path-lesson-001)
+  - [06.2 — What Is Partitioning? (Lesson 002)](#062--what-is-partitioning-lesson-002)
+  - [06.3 — Vertical vs Horizontal Partitioning (Lesson 003)](#063--vertical-vs-horizontal-partitioning-lesson-003)
+  - [06.4 — Partitioning Types (Lesson 004)](#064--partitioning-types-lesson-004)
+  - [06.5 — Partitioning vs Sharding (Lesson 005)](#065--partitioning-vs-sharding-lesson-005)
+  - [06.6 — Preparing PostgreSQL, the Database, Table, and Indexes (Lesson 006)](#066--preparing-postgresql-the-database-table-and-indexes-lesson-006)
+  - [06.7 — Execute Multiple Queries on the Original Table (Lesson 007)](#067--execute-multiple-queries-on-the-original-table-lesson-007)
+  - [06.8 — Create and Attach Partitioned Tables (Lesson 008)](#068--create-and-attach-partitioned-tables-lesson-008)
+  - [06.9 — Populate the Partitions and Create Indexes (Lesson 009)](#069--populate-the-partitions-and-create-indexes-lesson-009)
+  - [06.10 — Class Project: Queries, Pruning, and Partition Sizes (Lesson 010)](#0610--class-project-queries-pruning-and-partition-sizes-lesson-010)
+  - [06.11 — Advantages of Partitioning (Lesson 011)](#0611--advantages-of-partitioning-lesson-011)
+  - [06.12 — Disadvantages and Design Constraints (Lesson 012)](#0612--disadvantages-and-design-constraints-lesson-012)
+  - [06.13 — Summary and Self-Check (Lesson 013)](#0613--summary-and-self-check-lesson-013)
+  - [06.14 — Automate Partitioning in PostgreSQL (Lesson 014)](#0614--automate-partitioning-in-postgresql-lesson-014)
 - [07 — Database Sharding](#07--database-sharding)
 - [08 — Concurrency Control](#08--concurrency-control)
 - [09 — Database Replication](#09--database-replication)
@@ -1479,9 +1493,825 @@ PostgreSQL has its own update trade-offs: a changed row version may require new 
 ### 06 — Database Partitioning
 
 - **Status:** `[ ]`
-- **Summary:** Partitioning data within one system.
-- **Focus:** Horizontal / vertical partitioning strategies.
-- **Notes:** *(later)*
+- **Summary:** Split one logical table into physical partitions so queries and maintenance can work on the relevant data.
+- **Focus:** All 14 tutorial lessons: horizontal and vertical partitioning, range/list/hash strategies, sharding, the PostgreSQL grades lab, performance, storage, trade-offs, and automation.
+
+#### 06.1 — Introduction and Learning Path (Lesson 001)
+
+**Goal:** Understand why partitioning exists, implement it, and measure whether it helps.
+
+A large table can be difficult to query, load, and maintain. Partitioning groups its rows into smaller physical tables while keeping a logical parent that applications can query. The useful question is **which data can this operation avoid touching?**
+
+This chapter follows the supplied tutorial's 14 lessons. Its grades example keeps the original four boundaries and 10-million-row dataset; the examples use PostgreSQL 18 syntax and clarify details that are easy to miss in the lecture. Unless stated otherwise, **partitioning** means horizontal partitioning within a PostgreSQL database.
+
+By the end, you should be able to:
+
+1. Choose a partition key from actual query and retention requirements.
+2. Explain horizontal partitioning, vertical splitting, and sharding.
+3. Create range, list, and hash partitions.
+4. Load a partitioned table and inspect its physical children and indexes.
+5. Verify pruning with `EXPLAIN`, rather than assume a speedup.
+6. Attach prepared data, detach old data, and automate partition creation.
+
+**Lab order:** Run Lessons 006–010 in the same database. The examples in Lessons 003–004 and 011 use separate table names. Lesson 014 uses a separate schema. Keep autocommit enabled unless a block explicitly starts a transaction. Shell commands run in a terminal; SQL and backslash commands run in `psql`.
+
+#### 06.2 — What Is Partitioning? (Lesson 002)
+
+**Goal:** Follow a query from the logical table to its relevant physical partition.
+
+Imagine a million customers divided into five ranges:
+
+| Physical partition | Customer IDs, inclusive |
+| --- | --- |
+| `customers_200k` | 1–200,000 |
+| `customers_400k` | 200,001–400,000 |
+| `customers_600k` | 400,001–600,000 |
+| `customers_800k` | 600,001–800,000 |
+| `customers_1m` | 800,001–1,000,000 |
+
+The application still sends:
+
+```sql
+SELECT name FROM customers WHERE id = 700001;
+```
+
+If `customers` is partitioned by these ID ranges, the database can exclude the other four partitions and search `customers_800k`. This exclusion is **partition pruning**. Within that partition, it still needs a suitable access method: an index lookup, a bitmap scan, or a sequential scan.
+
+```text
+Application: SELECT ... FROM customers WHERE id = 700001
+                         |
+             Parent's partition boundaries
+                         |
+             Prune four irrelevant partitions
+                         |
+                customers_800k
+                         |
+              Local index or table scan
+```
+
+Keep these terms separate:
+
+- **Partitioned table:** The logical parent. In PostgreSQL declarative partitioning it has no row storage of its own.
+- **Partition:** A physical child that stores rows, or an intermediate parent with further subpartitions.
+- **Partition key:** The column(s) or expression(s) used to assign rows, such as `id`, `created_at`, or `region`.
+- **Partition bounds:** The permitted values for a child.
+- **Routing:** Choosing a destination for an insert or a changed partition key.
+- **Pruning:** Eliminating children that cannot satisfy a query's partition-key conditions.
+
+Partitioning and indexing complement each other. Pruning chooses tables; indexes locate entries inside tables. Pruning does not require an index on the partition key. An indexed million-row table can already answer a selective lookup efficiently; partitioning is not automatically faster merely because there are many rows.
+
+**Check:** If the table is partitioned by `id`, can `WHERE name = 'Kim'` identify one ID partition? **No.** Without a usable ID condition, several or all partitions may need to be searched.
+
+[Reference: PostgreSQL declarative partitioning](https://www.postgresql.org/docs/18/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE).
+
+#### 06.3 — Vertical vs Horizontal Partitioning (Lesson 003)
+
+**Goal:** Distinguish splitting rows from splitting columns.
+
+| Approach | What is separated? | Typical reason |
+| --- | --- | --- |
+| Horizontal partitioning | Groups of rows with the same columns. | Pruning, retention, and maintenance by range or category. |
+| Vertical splitting | Groups of columns connected by a shared key. | Separate frequently read attributes from large or rarely read payloads. |
+
+For horizontal partitioning, every customer partition has columns such as `id`, `name`, and `email`. For vertical splitting, an application might keep a small profile table and a separate document table:
+
+```sql
+CREATE TABLE partitioning_profiles (
+  id bigint PRIMARY KEY,
+  name text NOT NULL,
+  email text NOT NULL
+);
+
+CREATE TABLE partitioning_documents (
+  customer_id bigint PRIMARY KEY
+    REFERENCES partitioning_profiles (id),
+  document bytea NOT NULL
+);
+
+INSERT INTO partitioning_profiles
+VALUES (1, 'Kim', 'kim@example.com');
+
+INSERT INTO partitioning_documents
+VALUES (1, decode('48656c6c6f', 'hex'));
+
+-- Frequent path: only the profile is needed.
+SELECT name, email FROM partitioning_profiles WHERE id = 1;
+
+-- Read the optional document when it is needed.
+SELECT p.name, d.document
+FROM partitioning_profiles AS p
+LEFT JOIN partitioning_documents AS d ON d.customer_id = p.id
+WHERE p.id = 1;
+```
+
+The shared key maintains the relationship; `PRIMARY KEY (customer_id)` allows at most one document per customer. An inner join would omit customers without documents, so the example uses a left join.
+
+In PostgreSQL this vertical split is ordinary relational design, not `PARTITION BY`. The database does not automatically reconstruct the original table when an application queries `partitioning_profiles`; use a join or define a view. Splitting columns resembles normalization but does not, by itself, establish a particular normal form.
+
+The document table can be assigned to a tablespace backed by slower storage. PostgreSQL also stores some large values out of line through **TOAST**, so a large `bytea` column does not mean every profile query reads its entire payload. Measure the benefit of splitting; consider joins, extra writes, and lifecycle consistency.
+
+**Check:** Does `PARTITION BY RANGE (id)` move a document column to a separate table? **No.** It divides rows, preserving the parent's columns in each child.
+
+[Reference: PostgreSQL TOAST storage](https://www.postgresql.org/docs/18/storage-toast.html).
+
+#### 06.4 — Partitioning Types (Lesson 004)
+
+**Goal:** Match range, list, and hash strategies to a workload.
+
+**Range partitioning** groups adjacent values. It suits time-series measurements, logs, invoices, and ID intervals. PostgreSQL range bounds are **lower-inclusive and upper-exclusive**: `[from, to)`. October's partition includes October 1 but excludes November 1.
+
+```sql
+CREATE TABLE partitioning_events (
+  id bigint NOT NULL,
+  occurred_at timestamptz NOT NULL,
+  message text NOT NULL,
+  PRIMARY KEY (occurred_at, id)
+) PARTITION BY RANGE (occurred_at);
+
+CREATE TABLE partitioning_events_2026_10
+PARTITION OF partitioning_events
+FOR VALUES FROM ('2026-10-01 00:00:00+00')
+           TO ('2026-11-01 00:00:00+00');
+
+CREATE TABLE partitioning_events_2026_11
+PARTITION OF partitioning_events
+FOR VALUES FROM ('2026-11-01 00:00:00+00')
+           TO ('2026-12-01 00:00:00+00');
+
+INSERT INTO partitioning_events VALUES
+  (1, '2026-10-31 23:59:59+00', 'October event'),
+  (2, '2026-11-01 00:00:00+00', 'November event');
+
+SELECT tableoid::regclass AS partition, id, occurred_at
+FROM partitioning_events ORDER BY id;
+
+EXPLAIN
+SELECT * FROM partitioning_events
+WHERE occurred_at >= '2026-10-01 00:00:00+00'
+  AND occurred_at <  '2026-11-01 00:00:00+00';
+```
+
+Use explicit time-zone offsets for timestamp boundaries. The query expresses the same half-open interval as the partition; avoid an inclusive `BETWEEN` that also includes the next month's midnight. A function such as `date_trunc('month', occurred_at)` in a filter can make pruning harder; check its plan rather than assume the planner derives the equivalent range.
+
+**List partitioning** assigns explicit categories, such as states or regions:
+
+```sql
+CREATE TABLE partitioning_orders (
+  id bigint NOT NULL,
+  region text NOT NULL,
+  total numeric(12, 2) NOT NULL,
+  PRIMARY KEY (region, id)
+) PARTITION BY LIST (region);
+
+CREATE TABLE partitioning_orders_west
+PARTITION OF partitioning_orders FOR VALUES IN ('CA', 'OR', 'WA');
+
+CREATE TABLE partitioning_orders_south
+PARTITION OF partitioning_orders FOR VALUES IN ('AL', 'GA');
+
+CREATE TABLE partitioning_orders_other
+PARTITION OF partitioning_orders DEFAULT;
+
+INSERT INTO partitioning_orders VALUES
+  (1, 'CA', 125.00), (2, 'AL', 80.00), (3, 'NY', 55.00);
+
+SELECT tableoid::regclass AS partition, id, region
+FROM partitioning_orders ORDER BY id;
+```
+
+A `DEFAULT` partition catches values not covered by another child. It prevents some missing-partition errors, but requires monitoring. Before adding a dedicated `NY` partition, move any `NY` rows out of the default child; otherwise PostgreSQL rejects the new bounds because existing rows belong there. A heavily populated category can also become a hot partition.
+
+**Hash partitioning** assigns a key's internal hash to a bucket:
+
+```sql
+CREATE TABLE partitioning_sessions (
+  user_id bigint NOT NULL,
+  token text NOT NULL,
+  PRIMARY KEY (user_id, token)
+) PARTITION BY HASH (user_id);
+
+CREATE TABLE partitioning_sessions_h0 PARTITION OF partitioning_sessions
+FOR VALUES WITH (MODULUS 4, REMAINDER 0);
+CREATE TABLE partitioning_sessions_h1 PARTITION OF partitioning_sessions
+FOR VALUES WITH (MODULUS 4, REMAINDER 1);
+CREATE TABLE partitioning_sessions_h2 PARTITION OF partitioning_sessions
+FOR VALUES WITH (MODULUS 4, REMAINDER 2);
+CREATE TABLE partitioning_sessions_h3 PARTITION OF partitioning_sessions
+FOR VALUES WITH (MODULUS 4, REMAINDER 3);
+
+INSERT INTO partitioning_sessions VALUES (42, 'sample-token');
+
+SELECT tableoid::regclass AS partition, user_id
+FROM partitioning_sessions;
+
+EXPLAIN SELECT * FROM partitioning_sessions WHERE user_id = 42;
+```
+
+Do not calculate the destination as `user_id % 4`: PostgreSQL hashes the value first. Hash partitioning can spread distinct keys, but all rows for one hot key still share a destination. Equality lookups can prune; a range of user IDs generally cannot select a contiguous subset of hash buckets. PostgreSQL hash partitions are not an automatically managed consistent-hashing ring; changing bucket coverage requires a planned migration.
+
+| Strategy | Useful condition | Main design concern |
+| --- | --- | --- |
+| Range | `occurred_at >= start AND occurred_at < end` | Future bounds, late arrivals, and uneven growth. |
+| List | `region = 'CA'` | Category skew and handling new categories. |
+| Hash | `user_id = 42` | Hot keys and redistribution when expanding. |
+
+Subpartitioning combines strategies, for example monthly ranges with hash children by tenant. It increases the number of objects: 24 months × 8 buckets means 192 leaf partitions. Add it only when a measured requirement justifies the extra planning and maintenance work.
+
+[Reference: partition bounds and strategies](https://www.postgresql.org/docs/18/sql-createtable.html).
+
+#### 06.5 — Partitioning vs Sharding (Lesson 005)
+
+**Goal:** Separate local organization from distribution across servers.
+
+| Concern | Local PostgreSQL partitioning | Sharding |
+| --- | --- | --- |
+| Physical placement | Children belong to one database instance; tablespaces may use different devices. | Data subsets are placed on separate database servers or instances. |
+| Routing | PostgreSQL routes writes and plans reads through the parent. | An application, router, or distributed database chooses shards. |
+| Capacity | Uses the resources of that instance. | Can distribute storage and compute across machines. |
+| Transactions and joins | Remain within one database's transaction system. | Cross-shard operations may require coordination or have restrictions. |
+| Operations | Manage bounds, indexes, and partition lifecycle. | Also manage placement, rebalancing, failures, and distributed consistency. |
+
+Both approaches divide data, and each shard can itself contain partitioned tables. Sharding does not necessarily require the application to know server addresses; a router can hide them. Conversely, changing table names is not the defining property of partitioning. The defining distinction here is **one local database's physical layout versus distributed placement and coordination**.
+
+Example: monthly event partitions help an instance discard old data and prune date-based reports. Sharding events across several servers by tenant can address an instance's measured capacity limit, but introduces cross-tenant routing and aggregation work.
+
+**Check:** Will creating 100 partitions on one server provide the CPU and RAM of 100 servers? **No.** Local partitioning does not create independent machines or failure domains.
+
+#### 06.6 — Preparing PostgreSQL, the Database, Table, and Indexes (Lesson 006)
+
+**Goal:** Build the tutorial's unpartitioned baseline before creating partitions.
+
+Use an existing PostgreSQL 18 practice instance, or start a Docker container. This example exposes PostgreSQL on local port `5433` for the Node.js lesson; the password is for this disposable lab.
+
+```bash
+docker run --name partitioning-pg18 \
+  -e POSTGRES_PASSWORD=partitioning_lab_only \
+  -p 127.0.0.1:5433:5432 \
+  -d postgres:18
+
+docker exec partitioning-pg18 pg_isready -U postgres
+# Retry the readiness check if initialization is still running.
+docker exec -it partitioning-pg18 psql -U postgres
+```
+
+In `psql`, create and connect to a new practice database:
+
+```sql
+CREATE DATABASE partitioning_lab;
+\connect partitioning_lab
+\timing on
+
+CREATE SCHEMA partitioning_demo;
+SET search_path TO partitioning_demo, public;
+
+CREATE TABLE grades_original (
+  id bigint GENERATED BY DEFAULT AS IDENTITY,
+  g integer NOT NULL CHECK (g >= 0 AND g < 100)
+);
+
+INSERT INTO grades_original (g)
+SELECT floor(random() * 100)::integer
+FROM generate_series(1, 10000000);
+
+CREATE INDEX grades_original_g_idx ON grades_original (g);
+ANALYZE grades_original;
+
+SELECT count(*) AS rows, min(g) AS lowest, max(g) AS highest
+FROM grades_original;
+\d grades_original
+```
+
+`random()` returns a value from 0 inclusive to 1 exclusive; multiplication and `floor` produce grades 0–99. There are exactly 10 million rows, but the count of each grade varies. Under this uniform generator, each grade has about **100,000** rows, not 10,000.
+
+For a quicker first run, replace `10000000` with `100000`. The resulting plans and timings may differ. Save the baseline before running the copy: creating the partitioned version requires additional space for another copy of the data and indexes, plus write-ahead logging and temporary work.
+
+The lab builds the index after loading to avoid maintaining it for every inserted row. On a live table, that choice has availability and locking implications. `ANALYZE` collects statistics used in planning; it does not create an index or sort the table.
+
+The identity column supplies IDs; this lab deliberately has no primary-key index so it can focus on the same grade index in both designs. An identity/sequence generates values but is not a uniqueness constraint. A `NOT NULL` partition key is a design choice here, not a universal requirement for all PostgreSQL partitioning strategies.
+
+[References: identity columns and partition definitions](https://www.postgresql.org/docs/18/sql-createtable.html) · [ANALYZE](https://www.postgresql.org/docs/18/sql-analyze.html).
+
+#### 06.7 — Execute Multiple Queries on the Original Table (Lesson 007)
+
+**Goal:** Establish the query workload and understand its plans.
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_original WHERE g = 30;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_original WHERE g BETWEEN 30 AND 35;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_original WHERE g >= 80;
+```
+
+`BETWEEN 30 AND 35` includes both endpoints: six possible grades, or roughly 600,000 rows in this dataset. `g >= 80` includes 20 grades, or roughly two million rows.
+
+Look below the aggregate node to find how matching rows are obtained:
+
+| Plan node | Interpretation |
+| --- | --- |
+| `Index Scan` | Traverse the grade index and visit heap tuples as needed. |
+| `Bitmap Index Scan` + `Bitmap Heap Scan` | Collect tuple locations, then read relevant heap pages. |
+| `Index Only Scan` | Obtain required values from the index; visibility can still require heap fetches. |
+| `Seq Scan` / `Parallel Seq Scan` | Scan the table, potentially distributing work among workers. |
+
+The tutorial observes bitmap scans; your engine version, statistics, visibility map, hardware, and cache can produce different choices. An aggregate returning one row still has to inspect many underlying matches. A sequential scan can be cheaper than scattered heap reads for a broad condition.
+
+`EXPLAIN ANALYZE` executes the statement. `BUFFERS` reports buffer activity; a shared-buffer `read` may still be served by the operating system's cache, so do not equate it directly with physical device I/O. Record planning time, execution time, estimated/actual scan rows, buffer hits/reads, and heap fetches where present.
+
+**Check:** Is `count(*)` with one output row a one-row lookup? **No.** It must count all visible matching rows.
+
+[Reference: EXPLAIN options and execution](https://www.postgresql.org/docs/18/sql-explain.html).
+
+#### 06.8 — Create and Attach Partitioned Tables (Lesson 008)
+
+**Goal:** Reproduce the tutorial's four grade partitions with correct boundaries.
+
+Continue in the database and schema from Lesson 006. If you reconnected, run `SET search_path TO partitioning_demo, public;` first.
+
+```sql
+CREATE TABLE grades_parts (
+  id bigint NOT NULL,
+  g integer NOT NULL CHECK (g >= 0 AND g < 100)
+) PARTITION BY RANGE (g);
+
+CREATE TABLE grades_00_35 (LIKE grades_parts INCLUDING ALL);
+CREATE TABLE grades_35_60 (LIKE grades_parts INCLUDING ALL);
+CREATE TABLE grades_60_80 (LIKE grades_parts INCLUDING ALL);
+CREATE TABLE grades_80_100 (LIKE grades_parts INCLUDING ALL);
+
+ALTER TABLE grades_parts ATTACH PARTITION grades_00_35
+FOR VALUES FROM (0) TO (35);
+ALTER TABLE grades_parts ATTACH PARTITION grades_35_60
+FOR VALUES FROM (35) TO (60);
+ALTER TABLE grades_parts ATTACH PARTITION grades_60_80
+FOR VALUES FROM (60) TO (80);
+ALTER TABLE grades_parts ATTACH PARTITION grades_80_100
+FOR VALUES FROM (80) TO (100);
+
+\d+ grades_parts
+\d grades_00_35
+```
+
+`LIKE` creates standalone tables by copying the selected definition. It does not copy rows or establish partition membership. `ATTACH PARTITION` establishes membership and bounds. Existing rows must fit; overlapping bounds are rejected. PostgreSQL can scan a populated table to validate the bounds during attachment.
+
+For a new empty child, a shorter equivalent form is:
+
+```sql
+-- Alternative syntax only: the child above already exists.
+-- CREATE TABLE grades_00_35 PARTITION OF grades_parts
+-- FOR VALUES FROM (0) TO (35);
+```
+
+| Child | Accepted integer grades | Expected share under uniform generation |
+| --- | --- | --- |
+| `grades_00_35` | 0–34 | 35% |
+| `grades_35_60` | 35–59 | 25% |
+| `grades_60_80` | 60–79 | 20% |
+| `grades_80_100` | 80–99 | 20% |
+
+Do **not** subtract one from a `TO` value. `[0, 35)` followed by `[35, 60)` is contiguous; `TO (34)` followed by `FROM (35)` leaves grade 34 uncovered. Unequal counts in this lab are expected because the first range is wider; they do not prove anything about real students' grades.
+
+A normal table cannot be converted into a declaratively partitioned parent by simply adding `PARTITION BY`. The lab creates a new parent and copies data. A live migration also needs a plan for concurrent writes, indexes, constraints, dependent objects, validation, and cutover.
+
+**Check:** Which partition receives grade 35? **`grades_35_60`**, because the lower bound is inclusive and the upper bound is exclusive.
+
+[Reference: CREATE TABLE, LIKE, and partition bounds](https://www.postgresql.org/docs/18/sql-createtable.html).
+
+#### 06.9 — Populate the Partitions and Create Indexes (Lesson 009)
+
+**Goal:** Route writes through the parent and create matching child indexes.
+
+```sql
+INSERT INTO grades_parts (id, g)
+SELECT id, g FROM grades_original;
+
+CREATE INDEX grades_parts_g_idx ON grades_parts (g);
+
+-- Update leaf statistics and the parent's inherited statistics.
+ANALYZE grades_00_35;
+ANALYZE grades_35_60;
+ANALYZE grades_60_80;
+ANALYZE grades_80_100;
+ANALYZE grades_parts;
+
+SELECT 'original' AS source, count(*) FROM grades_original
+UNION ALL
+SELECT 'partitioned', count(*) FROM grades_parts;
+
+SELECT tableoid::regclass AS partition,
+       count(*) AS rows, min(g) AS lowest, max(g) AS highest
+FROM grades_parts
+GROUP BY tableoid ORDER BY tableoid::regclass::text;
+
+SELECT tablename, indexname, indexdef
+FROM pg_indexes
+WHERE schemaname = 'partitioning_demo'
+ORDER BY tablename, indexname;
+```
+
+The insert targets `grades_parts`; PostgreSQL chooses a child for each row's `g`. Both logical tables should contain 10 million rows. `tableoid` identifies the physical table holding a returned row; its `regclass` cast displays the table name.
+
+The parent index describes an index hierarchy. Its actual entries reside in child indexes, and a normal parent-level `CREATE INDEX` creates or attaches matching indexes across the partitions. Child index names are generated; inspect them instead of assuming an exact name.
+
+This example copies IDs explicitly and gives `grades_parts.id` no automatic default. If you add a new identity/sequence default during a real migration, align its next value with imported IDs; copying values does not automatically advance an unrelated sequence. If `LIKE ... INCLUDING DEFAULTS` copies a `serial` default, it can also copy the reference to the original sequence. Defaults, identity, and uniqueness are separate concerns.
+
+For a production table, PostgreSQL 18 does not support `CREATE INDEX CONCURRENTLY` directly on a partitioned parent. An alternative is an index on `ONLY` the parent, concurrent builds on individual leaves, and `ALTER INDEX ... ATTACH PARTITION`; the parent becomes valid after all required child indexes are attached. Concurrent builds cannot run inside a transaction block.
+
+**Check:** Does the parent index contain one global B-Tree covering every child? **No.** The actual index data is local to the children.
+
+[References: partitioned index creation](https://www.postgresql.org/docs/18/sql-createindex.html) · [statistics collection](https://www.postgresql.org/docs/18/sql-analyze.html).
+
+#### 06.10 — Class Project: Queries, Pruning, and Partition Sizes (Lesson 010)
+
+**Goal:** Compare equivalent queries and account for the whole partition hierarchy.
+
+**A. Compare the same data and predicates.** Run each original/partitioned pair several times, alternating their order. Keep statistics, indexes, and concurrency comparable.
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_original WHERE g = 30;
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_parts WHERE g = 30;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_original WHERE g BETWEEN 30 AND 35;
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_parts WHERE g BETWEEN 30 AND 35;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_original WHERE g >= 80;
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_parts WHERE g >= 80;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*) FROM grades_parts WHERE id = 5000000;
+```
+
+| Predicate | Children that may contain matches |
+| --- | --- |
+| `g = 30` | `grades_00_35` only. |
+| `g BETWEEN 30 AND 35` | `grades_00_35` and `grades_35_60`. |
+| `g >= 80` | `grades_80_100` only. |
+| `id = 5000000` | All four: `id` is not the partition key. |
+
+These describe eligible children, not guaranteed scan node types or timings. A multi-child plan may use `Append` or `Parallel Append`. A smaller local index may help caching, but partitioning still processes every matching tuple required by the query. The tutorial itself shows that a small, well-cached dataset may have little timing improvement.
+
+**B. Demonstrate pruning without changing persistent settings.**
+
+```sql
+SHOW enable_partition_pruning;
+
+BEGIN;
+SET LOCAL enable_partition_pruning = off;
+EXPLAIN SELECT count(*) FROM grades_parts WHERE g = 30;
+ROLLBACK;
+
+BEGIN;
+SET LOCAL enable_partition_pruning = on;
+EXPLAIN SELECT count(*) FROM grades_parts WHERE g = 30;
+ROLLBACK;
+```
+
+Compare child names in the plans. With pruning enabled, expect only the first child. With it disabled, the plan may visit all four. Separately usable constraints can sometimes exclude children through **constraint exclusion**; inspect the actual plan. Pruning can happen during planning or execution, including for some parameterized queries. Disabling it can help diagnosis, but does not undo partition routing or retention benefits.
+
+**C. Inspect table and index storage.** PostgreSQL size functions return **bytes**, not bits.
+
+```sql
+SELECT c.relname, c.relkind,
+       pg_size_pretty(pg_relation_size(c.oid)) AS main_fork
+FROM pg_class AS c
+JOIN pg_namespace AS n ON n.oid = c.relnamespace
+WHERE n.nspname = 'partitioning_demo'
+  AND c.relkind IN ('r', 'i')
+ORDER BY pg_relation_size(c.oid) DESC;
+
+SELECT relid::regclass AS partition,
+       pg_size_pretty(pg_table_size(relid)) AS table_bytes,
+       pg_size_pretty(pg_indexes_size(relid)) AS index_bytes,
+       pg_size_pretty(pg_total_relation_size(relid)) AS total_bytes
+FROM pg_partition_tree('grades_parts'::regclass)
+WHERE isleaf
+ORDER BY pg_total_relation_size(relid) DESC;
+
+SELECT pg_size_pretty(sum(pg_total_relation_size(relid))::bigint)
+         AS partitioned_total
+FROM pg_partition_tree('grades_parts'::regclass)
+WHERE isleaf;
+
+SELECT pg_size_pretty(pg_total_relation_size('grades_original'))
+         AS original_total;
+```
+
+`pg_relation_size` measures one relation fork; `pg_table_size` includes the table's auxiliary storage; `pg_indexes_size` totals its indexes; `pg_total_relation_size` includes both. The partitioned parent has no heap storing its children, so its size is not the hierarchy's total. Sum leaf sizes. The sum of several child indexes can be larger than one original index because partitioning adds overhead; smaller individual indexes do not imply less total storage.
+
+Use raw byte values for arithmetic. `pg_size_pretty` is for display. A mebibyte is 1,048,576 bytes; a decimal megabyte is 1,000,000 bytes.
+
+**D. Make the comparison fair.** Record a small results table:
+
+| Query / layout | Partitions visited | Scan type | Planning ms | Execution ms | Buffer hits / reads |
+| --- | --- | --- | --- | --- | --- |
+| `g = 30`, original | N/A | Record plan | Measure | Measure | Measure |
+| `g = 30`, partitioned | Expect 1 | Record plan | Measure | Measure | Measure |
+| `g BETWEEN 30 AND 35`, partitioned | Expect 2 | Record plan | Measure | Measure | Measure |
+| `id = 5000000`, partitioned | Expect 4 | Record plan | Measure | Measure | Measure |
+
+A second execution often benefits from caches. Loading the partitioned copy changes cache state too. Do not call a run “cold” simply because it was the first query in your session. Reducing Docker's memory alone does not guarantee a controlled cold-cache experiment; data size, PostgreSQL buffers, OS caches, and other resource limits matter. Report observed results with their conditions, not the tutorial's timings as universal predictions.
+
+**Project:** Repeat with `g = 35`, `g >= 60 AND g < 80`, and no filter. Predict eligible children before viewing each plan. For 10 million uniformly generated rows, expect roughly 100,000, two million, and 10 million matches respectively. Compare planning overhead and the amount of work that pruning actually eliminates.
+
+[References: size and partition-tree functions](https://www.postgresql.org/docs/18/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT) · [partition pruning](https://www.postgresql.org/docs/18/ddl-partitioning.html#DDL-PARTITION-PRUNING).
+
+#### 06.11 — Advantages of Partitioning (Lesson 011)
+
+**Goal:** Recognize benefits beyond a single lookup's runtime.
+
+**Less irrelevant data in important queries.** A current-month report may skip years of history. A broad scan of one small child can be cheaper than retrieving scattered tuples from a whole table through an index. This depends on pruning, selectivity, layout, and caches.
+
+**A smaller active working set.** Frequently accessed children and their indexes can fit in memory while old children remain cold. The benefit concerns the active workload, not a guarantee that every index lookup becomes faster.
+
+**Bulk loading through attachment.** Prepare a new month's table separately, check its rows, build indexes, then attach it. Here is a runnable continuation of the events example from Lesson 004:
+
+```sql
+CREATE TABLE partitioning_events_2026_12
+  (LIKE partitioning_events INCLUDING ALL);
+
+ALTER TABLE partitioning_events_2026_12
+ADD CONSTRAINT partitioning_events_dec_bounds CHECK (
+  occurred_at >= TIMESTAMPTZ '2026-12-01 00:00:00+00'
+  AND occurred_at < TIMESTAMPTZ '2027-01-01 00:00:00+00'
+);
+
+INSERT INTO partitioning_events_2026_12 VALUES
+  (3, '2026-12-15 12:00:00+00', 'Prepared separately');
+
+-- A real batch can instead use psql's client-side CSV import:
+-- \copy partitioning_events_2026_12 (id, occurred_at, message) FROM 'december.csv' WITH (FORMAT csv, HEADER true)
+
+ANALYZE partitioning_events_2026_12;
+
+ALTER TABLE partitioning_events
+ATTACH PARTITION partitioning_events_2026_12
+FOR VALUES FROM ('2026-12-01 00:00:00+00')
+           TO ('2027-01-01 00:00:00+00');
+
+ALTER TABLE partitioning_events_2026_12
+DROP CONSTRAINT partitioning_events_dec_bounds;
+```
+
+The validated check can avoid an attachment validation scan for these bounds. `ATTACH` still takes locks; it is not a lock-free operation. A default child may also need validation or data movement. PostgreSQL imports CSV with `COPY`/`\copy`; CSV is not a PostgreSQL storage engine, and another engine's partition restrictions should be checked independently.
+
+**Retention and archiving.** A whole old month can leave the parent without deleting its rows one by one:
+
+```sql
+ALTER TABLE partitioning_events
+DETACH PARTITION partitioning_events_2026_10;
+
+-- The detached table still exists and remains queryable.
+SELECT count(*) FROM partitioning_events_2026_10;
+SELECT count(*) FROM partitioning_events;
+```
+
+After the sample inserts, these counts are 1 and 2 respectively. Detachment removes the table from parent queries; it does not delete, export, compress, or move the rows. A later `DROP TABLE` permanently removes that retained table, so only use it when retention and backup requirements permit. Ordinary detach requires a strong parent lock; PostgreSQL also offers a concurrent form with restrictions, including no transaction block and no default partition.
+
+**Storage tiers.** If an administrator has created an appropriate tablespace, a retained table and its indexes can be moved to cheaper storage:
+
+```sql
+-- Illustrative only: archive_space must already exist.
+-- ALTER TABLE partitioning_events_2026_10 SET TABLESPACE archive_space;
+-- ALTER INDEX <actual_child_index_name> SET TABLESPACE archive_space;
+```
+
+Moving a table to another tablespace does not automatically move its ordinary indexes. A tablespace points to storage accessible to PostgreSQL; it is not automatically an object-store or tape archive. Plan the copy, I/O, capacity, and locking costs.
+
+[Reference: attachment, detachment, and locking](https://www.postgresql.org/docs/18/sql-altertable.html).
+
+#### 06.12 — Disadvantages and Design Constraints (Lesson 012)
+
+**Goal:** Account for updates, broad queries, constraints, and operational work.
+
+**Partition-key updates can move rows.** Continue with the grades lab; the transaction rolls back the test so the two datasets remain comparable:
+
+```sql
+BEGIN;
+
+INSERT INTO grades_parts (id, g) VALUES (-1, 30);
+SELECT tableoid::regclass AS partition, id, g
+FROM grades_parts WHERE id = -1 AND g = 30;
+
+UPDATE grades_parts SET g = 60 WHERE id = -1 AND g = 30;
+SELECT tableoid::regclass AS partition, id, g
+FROM grades_parts WHERE id = -1 AND g = 60;
+
+ROLLBACK;
+```
+
+The row moves from `grades_00_35` to `grades_60_80`. PostgreSQL implements movement as deletion from the source and insertion into the destination. This adds write and index work; a missing destination can make the update fail. Concurrent operations can encounter a serialization failure and require a transaction retry. Prefer stable partition keys when the workload permits; this behavior is not a special claim that partitioning inevitably damages SSDs.
+
+**Queries can touch every child.** Filtering by a non-partition key, requesting all history, or using a predicate the planner cannot exploit can reduce the benefit of pruning. More children mean additional planning, locking, metadata, and scan setup. An index on `id` in each child can help the ID lookup, but still does not tell a grade-partitioned parent which child owns that ID.
+
+**Global uniqueness has limits.** In PostgreSQL 18, a partitioned parent's primary-key or unique constraint must include all its partition-key columns, and the partition key for such a constraint cannot contain expressions. For the grades table:
+
+```sql
+-- Illustrative alternatives; do not add these to the benchmark.
+-- PRIMARY KEY (id)     -- Rejected on a parent partitioned by g.
+-- PRIMARY KEY (g, id)  -- Can enforce uniqueness of this pair.
+```
+
+Uniqueness of `(g, id)` does **not** make `id` globally unique: `(30, 7)` and `(60, 7)` are different keys. For events, `(occurred_at, id)` similarly allows the same ID at different times. If the business requires globally unique IDs or references by ID alone, design that enforcement explicitly; a composite key changes the meaning of dependent foreign keys too.
+
+**Schema and index changes need coordination.** Parent-level DDL propagates many changes, but can lock or perform work across numerous children. Monitor long migrations, child index validity, and schema drift. Parent statistics may need manual `ANALYZE`; child autovacuum activity alone does not keep every parent estimate current.
+
+**New values need destinations.** Inserts fail when no range/list/hash child accepts the key and no applicable default child exists. Default partitions help absorb some values but create a reconciliation obligation. Nullable keys also need a deliberate policy; range bounds do not accept null, while list/default arrangements can handle it.
+
+**Skew and partition count matter.** Equal-width ranges do not imply equal row counts or write rates. A current-month range can receive nearly all new writes; a large tenant can dominate one hash bucket. Choose granularity from query windows, retention intervals, expected growth, and maintenance capacity, then measure it.
+
+[References: row movement and concurrency](https://www.postgresql.org/docs/18/sql-update.html) · [unique and partition constraints](https://www.postgresql.org/docs/18/sql-createtable.html) · [parent statistics](https://www.postgresql.org/docs/18/sql-analyze.html).
+
+#### 06.13 — Summary and Self-Check (Lesson 013)
+
+**Goal:** Explain when partitioning helps and how to verify it.
+
+| Question | Answer |
+| --- | --- |
+| What does horizontal partitioning divide? | Rows; children retain the parent's columns. |
+| What does vertical splitting divide? | Columns; reconstruct data with a shared key and joins. |
+| What does pruning do? | Excludes children that cannot satisfy a partition-key condition. |
+| Are range upper bounds included? | No; PostgreSQL uses `[from, to)`. |
+| Does pruning need a partition-key index? | No; bounds drive pruning, indexes support access within children. |
+| Is partitioning equivalent to sharding? | No; local partitioning does not distribute instances. |
+| Does a parent size represent all child storage? | No; sum leaf table and index sizes. |
+| Must partitioning make a cached point lookup faster? | No; workload and measurements determine the result. |
+
+**Exercises:**
+
+1. Predict the children for `g >= 34 AND g < 61`. Which grades are included?
+2. Explain why `BETWEEN 30 AND 35` touches two partitions.
+3. Explain what happens to the events query results after detaching October.
+4. Decide whether grades or stable event timestamps are better for a retention workload.
+5. Explain why a primary key of `(g, id)` does not enforce unique `id` values across different grades.
+6. Describe the evidence needed before claiming a partitioned table is faster.
+
+**Answers:** The first three grade children may contain grades 34–60. `BETWEEN` includes 35, which belongs to the second child. October remains queryable directly but disappears from parent queries. A stable event time usually aligns better with age-based retention; grade changes can move rows and grades do not identify data age. Composite uniqueness applies to the pair. Compare equivalent results, plans, visited children, timings, buffer activity, indexes, statistics, and cache conditions.
+
+**Design checklist:** Start with the important predicates and retention policy; select a stable key; define contiguous bounds; decide how to handle new and late values; plan uniqueness and references; create useful local indexes; verify pruning; measure the complete workload; automate the lifecycle.
+
+#### 06.14 — Automate Partitioning in PostgreSQL (Lesson 014)
+
+**Goal:** Replace repeated DDL with a predictable generator and verify its boundaries.
+
+The tutorial proposes one billion customers with 10 million IDs per range. The resulting **100 partitions define ID capacity**, not 100 tables that already contain ten million rows each. This version covers IDs **0–999,999,999** with `[0, 1,000,000,000)`. A one-based design covering 1–1,000,000,000 would instead start at 1 and end at 1,000,000,001.
+
+PostgreSQL `integer` is signed and reaches 2,147,483,647; it does not provide four billion positive IDs. Use `bigint` for room to grow.
+
+**A. Prepare the Node.js client.** Use a separate practice directory:
+
+```bash
+mkdir partitioning-automation
+cd partitioning-automation
+npm init -y
+npm install pg
+
+export PGHOST=127.0.0.1
+export PGPORT=5433
+export PGUSER=postgres
+export PGPASSWORD=partitioning_lab_only
+export PGDATABASE=partitioning_lab
+```
+
+Save the following as `create-partitions.mjs`. It uses the standard PostgreSQL environment variables and the practice database created in Lesson 006. It creates a new schema, has no database-drop command, and commits all DDL together. It intentionally fails if that schema already exists; rerunning does not silently accept unknown existing definitions.
+
+```javascript
+import pg from 'pg';
+const { Client } = pg;
+const client = new Client();
+
+const partitionWidth = 10_000_000;
+const idLimit = 1_000_000_000; // Exclusive upper bound.
+const partitionCount = idLimit / partitionWidth;
+
+if (!Number.isSafeInteger(partitionWidth) || partitionWidth <= 0 ||
+    !Number.isSafeInteger(idLimit) || idLimit <= 0 ||
+    !Number.isInteger(partitionCount)) {
+  throw new Error('Bounds must be positive safe integers and divide evenly.');
+}
+
+function identifier(value) {
+  if (!/^[a-z_][a-z0-9_]*$/.test(value)) {
+    throw new Error('Invalid generated identifier.');
+  }
+  return `"${value}"`;
+}
+
+let inTransaction = false;
+try {
+  await client.connect();
+  await client.query('BEGIN');
+  inTransaction = true;
+  await client.query("SET LOCAL lock_timeout = '5s'");
+  // Coordinate other copies of this generator using the same lock key.
+  await client.query('SELECT pg_advisory_xact_lock(606, 14)');
+
+  await client.query('CREATE SCHEMA partitioning_auto');
+  await client.query(`
+    CREATE TABLE partitioning_auto.customers (
+      id bigint PRIMARY KEY CHECK (id >= 0 AND id < ${idLimit}),
+      name text NOT NULL
+    ) PARTITION BY RANGE (id)
+  `);
+
+  for (let i = 0; i < partitionCount; i++) {
+    const lower = i * partitionWidth;
+    const upper = (i + 1) * partitionWidth;
+    const child = identifier(`customers_${lower}_${upper}`);
+    await client.query(`
+      CREATE TABLE partitioning_auto.${child}
+      PARTITION OF partitioning_auto.customers
+      FOR VALUES FROM (${lower}) TO (${upper})
+    `);
+  }
+
+  await client.query('COMMIT');
+  inTransaction = false;
+  console.log(`Created ${partitionCount} partitions for [0, ${idLimit}).`);
+} catch (error) {
+  if (inTransaction) {
+    await client.query('ROLLBACK').catch(() => {});
+  }
+  console.error(error.message);
+  process.exitCode = 1;
+} finally {
+  await client.end();
+}
+```
+
+Run it in the terminal:
+
+```bash
+node create-partitions.mjs
+```
+
+SQL parameters such as `$1` represent data values; they cannot stand in for table names. This DDL generator interpolates only its validated, internally generated identifier and safe integer bounds. Use `pg-format` or another appropriate identifier-quoting mechanism if names come from external input. Ordinary application inserts should still use parameterized queries:
+
+```javascript
+// Example inside an already-connected client session:
+await client.query(
+  'INSERT INTO partitioning_auto.customers (id, name) VALUES ($1, $2)',
+  [42, 'Kim'],
+);
+```
+
+JavaScript `Number` loses integer precision above `Number.MAX_SAFE_INTEGER`, while PostgreSQL `bigint` can represent larger integers. This generator's one-billion bound is safe; designs beyond that must use exact integer handling and appropriate serialization. The `id` primary key works here because it is also the partition key.
+
+**B. Verify metadata and boundary routing in psql.**
+
+```sql
+SELECT count(*) AS leaf_partitions
+FROM pg_partition_tree('partitioning_auto.customers'::regclass)
+WHERE isleaf;
+
+SELECT c.relname, pg_get_expr(c.relpartbound, c.oid) AS bounds
+FROM pg_class AS c
+JOIN pg_inherits AS i ON i.inhrelid = c.oid
+WHERE i.inhparent = 'partitioning_auto.customers'::regclass
+ORDER BY c.relname;
+
+BEGIN;
+INSERT INTO partitioning_auto.customers (id, name) VALUES
+  (0, 'First ID'),
+  (9999999, 'Before first boundary'),
+  (10000000, 'At first boundary'),
+  (999999999, 'Last supported ID');
+
+SELECT tableoid::regclass AS partition, id, name
+FROM partitioning_auto.customers ORDER BY id;
+ROLLBACK;
+```
+
+Expect 100 leaf partitions. IDs 0 and 9,999,999 go to `customers_0_10000000`; 10,000,000 goes to `customers_10000000_20000000`; 999,999,999 goes to `customers_990000000_1000000000`. ID 1,000,000,000 is outside this design and must be rejected.
+
+**C. Populate a small sample before considering large batches.**
+
+```sql
+INSERT INTO partitioning_auto.customers (id, name)
+SELECT n, 'Customer ' || n FROM generate_series(1, 1000) AS s(n);
+
+ANALYZE partitioning_auto.customers;
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT name FROM partitioning_auto.customers WHERE id = 700;
+```
+
+The query should visit the first child and can use its primary-key index. To reproduce larger loads, insert in bounded batches and observe disk, WAL, transaction duration, and recovery costs. Creating 100 empty partitions is not a reason to insert a billion synthetic rows.
+
+**D. Extend the idea to ongoing maintenance.** A production time-partition job should create future ranges before writes arrive, validate existing definitions when rerunning, serialize competing maintenance runs, report failures, handle late records and default-child reconciliation, update statistics, and apply retention only after its policy permits. Keep creation and irreversible removal as separate operations. A hand-written generator or a partition-management extension can implement this lifecycle; PostgreSQL's insert router does not create missing children automatically.
+
+The fixed-range example is a bootstrap script, not a scheduled maintenance service. To rerun it, use a new practice schema or explicitly remove the old practice schema after deciding its contents are disposable. Do not use `IF NOT EXISTS` as proof that an existing table has the right parent, key, indexes, or bounds.
+
+[References: node-postgres connections](https://node-postgres.com/features/connecting) · [parameterized queries and identifiers](https://node-postgres.com/features/queries) · [PostgreSQL integer ranges](https://www.postgresql.org/docs/18/datatype-numeric.html).
+
+**Remember:** Choose partitions around the work you need to avoid or manage, verify their boundaries and query plans, and automate their lifecycle before relying on them in production.
 
 ---
 
