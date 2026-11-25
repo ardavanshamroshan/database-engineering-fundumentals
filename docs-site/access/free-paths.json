@@ -1,0 +1,9 @@
+{
+  "$comment": "Whitelist only. Everything else is paid and MUST NOT appear in the public free build.",
+  "paths": [
+    "/",
+    "/fundamentals/",
+    "/fundamentals/01-course-updates",
+    "/fundamentals/02-acid"
+  ]
+}
